@@ -37,11 +37,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	switch cfg.Command {
 	case "serve":
-		err = runGateway(ctx, cfg, stdout, stderr)
+		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runGateway)
 	case "telegram":
-		err = runTelegramPoller(ctx, cfg, stdout, stderr)
+		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runTelegramPoller)
 	case "gmail":
-		err = runGmailPoller(ctx, cfg, stdout, stderr)
+		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runGmailPoller)
 	case "schedule":
 		err = runScheduler(ctx, cfg, stdout, stderr)
 	case "poll":
@@ -50,7 +50,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		if strings.TrimSpace(cfg.Prompt) != "" {
 			err = runPrompt(ctx, cfg, strings.TrimSpace(cfg.Prompt), stdin, stdout, stderr, nil, conversationModeChat)
 		} else {
-			err = runREPL(ctx, cfg, stdin, stdout, stderr)
+			err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, func(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
+				return runREPL(ctx, cfg, stdin, stdout, stderr)
+			})
 		}
 	}
 	if err != nil {

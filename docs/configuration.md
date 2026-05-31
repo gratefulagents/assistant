@@ -128,14 +128,18 @@ the SDK skill registry.
 
 ## Scheduling
 
-Schedule tools are enabled by default with `--scheduling=true` and store
-durable jobs in the state directory. Start the scheduler with:
+Schedule tools and the background scheduler are enabled by default with
+`--scheduling=true` and store durable jobs in the state directory. The
+scheduler runs automatically in long-running modes: the interactive REPL,
+`serve`, `telegram`, `gmail`, `schedule`, and `poll`. To run only the
+scheduler:
 
 ```sh
 assistant schedule --provider openai-oauth
 ```
 
-`assistant poll` also starts the scheduler unless `--scheduling=false` is set.
+Set `--scheduling=false` to disable both schedule tools and the background
+scheduler. One-shot prompts do not keep the scheduler running.
 Cron expressions use `github.com/robfig/cron/v3` standard five-field syntax,
 for example `0 9 * * MON-FRI`.
 

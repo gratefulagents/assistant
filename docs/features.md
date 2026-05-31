@@ -119,14 +119,16 @@ run_at         one-time RFC3339 or YYYY-MM-DD HH:MM timestamp
 timezone       optional IANA timezone such as America/New_York
 ```
 
-Run due scheduled prompts:
+Run only the scheduler:
 
 ```sh
 assistant schedule --provider openai-oauth
 ```
 
-`assistant poll` also runs the scheduler alongside Telegram and Gmail. Keep one
-of those long-running commands active for scheduled jobs to fire.
+The scheduler is enabled by default in long-running modes: the interactive
+REPL, `serve`, `telegram`, `gmail`, `schedule`, and `poll`. One-shot prompts
+still exit after the reply. Set `--scheduling=false` to disable both schedule
+tools and the background scheduler.
 
 For unattended scheduled prompts, review the tool and approval settings. If a
 scheduled prompt tries to use an approval-gated tool, the run records an error
@@ -291,7 +293,7 @@ assistant poll --provider openai-oauth
 
 `assistant poll` starts Telegram when `ASSISTANT_TELEGRAM_BOT_TOKEN` is set,
 Gmail when `ASSISTANT_GMAIL_ACCESS_TOKEN` or `ASSISTANT_GMAIL_TOKEN` is set,
-and the scheduler when `--scheduling=true`.
+and the scheduler unless `--scheduling=false` is set.
 
 ## Local Gateway
 

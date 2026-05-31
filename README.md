@@ -1,11 +1,9 @@
 # Assistant
 
 `github.com/gratefulagents/assistant` is a lightweight personal AI assistant
-host built in Go on top of `github.com/gratefulagents/sdk`.
-
-The project is intentionally small: one command, a private `internal/assistant`
-implementation package, config-driven integrations, and no TUI, desktop,
-Kubernetes, or local-model runtime dependency.
+host built in Go on top of `github.com/gratefulagents/sdk`. It provides a
+single `assistant` command for interactive chat, one-shot prompts, scheduled
+jobs, Telegram and Gmail polling, and a local JSON gateway.
 
 ## Features
 
@@ -144,8 +142,10 @@ Schedule daemon:
 assistant schedule --provider openai-oauth --permission read-only --max-turns 100
 ```
 
-Ask Assistant to add a reminder or recurring cron from the REPL, then keep
-`assistant schedule` or `assistant poll` running for due jobs to execute.
+Ask Assistant to add a reminder or recurring cron from the REPL. The scheduler
+runs by default in long-running modes, including the REPL, `serve`, `telegram`,
+`gmail`, `schedule`, and `poll`; use `assistant schedule` when you want a
+standalone scheduler process.
 
 ## Common Flags
 
@@ -161,7 +161,7 @@ Ask Assistant to add a reminder or recurring cron from the REPL, then keep
 --mcp-config        extra MCP config file; repeatable
 --skills            enable SDK skill search/install/list tools
 --skill-catalog     optional custom skill catalog JSON
---scheduling        enable durable schedule tools
+--scheduling        enable durable schedule tools and the background scheduler
 --project-state     enable durable assistant memory/tasks
 --state-dir         filesystem state directory
 --guardrails        enable SDK guardrails

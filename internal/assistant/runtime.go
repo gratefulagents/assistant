@@ -122,7 +122,7 @@ func defaultInstructions() string {
 		"Be concise, practical, and clear. Use tools when they materially improve the answer.",
 		modelDrivenMemoryInstructions(),
 		"Use task tools for follow-up work, reminders, and multi-step personal projects.",
-		"Use schedule tools only when the user asks for a timed reminder, cron, recurring task, or scheduled follow-up. Scheduled prompts run only while the assistant schedule or poll command is running.",
+		"Use schedule tools only when the user asks for a timed reminder, cron, recurring task, or scheduled follow-up. Scheduled prompts run while a long-running assistant command is active; one-shot prompts exit after the reply.",
 		"Use skill_search and skill_install when the user needs a new integration. Installed skills become MCP servers through .mcp.json and are available on the next turn.",
 		"Ask before externally visible, destructive, expensive, or security-sensitive actions.",
 	}, " ")

@@ -96,7 +96,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.BoolVar(&cfg.EnableTools, "tools", cfg.EnableTools, "enable SDK tools")
 	fs.BoolVar(&cfg.EnableMCP, "mcp", cfg.EnableMCP, "load MCP tools from extension config and .mcp.json")
 	fs.BoolVar(&cfg.EnableSkills, "skills", cfg.EnableSkills, "enable SDK skill discovery/install tools")
-	fs.BoolVar(&cfg.EnableScheduling, "scheduling", cfg.EnableScheduling, "enable schedule tools and poll-mode scheduler")
+	fs.BoolVar(&cfg.EnableScheduling, "scheduling", cfg.EnableScheduling, "enable schedule tools and background scheduler")
 	fs.BoolVar(&cfg.EnableProjectState, "project-state", cfg.EnableProjectState, "enable durable memory and task tools")
 	fs.BoolVar(&cfg.EnableApproval, "approval", cfg.EnableApproval, "ask before tool execution")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
@@ -306,7 +306,7 @@ extension config:
   --config PATH             assistant JSON config; defaults to ~/.gratefulagents/assistant/config.json
   --mcp-config PATH         add an MCP config; repeat for any number of servers/bundles
   --skills                  expose SDK skill search/install/list tools
-  --scheduling              expose schedule tools and run scheduler in poll mode
+  --scheduling              expose schedule tools and run the background scheduler
   --audit                   emit structured audit events to stdout and logs
   --audit-level LEVEL       audit verbosity: low or full
   --audit-log PATH          append audit JSONL to PATH

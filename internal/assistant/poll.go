@@ -10,6 +10,39 @@ import (
 	"strings"
 )
 
+type longRunningFunc func(context.Context, appConfig, io.Writer, io.Writer) error
+
+func runWithOptionalScheduler(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, primary longRunningFunc) error {
+	return runWithOptionalSchedulerFunc(ctx, cfg, stdout, stderr, primary, runScheduler)
+}
+
+func runWithOptionalSchedulerFunc(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, primary, scheduler longRunningFunc) error {
+	if primary == nil {
+		return errors.New("primary runner is required")
+	}
+	if !cfg.EnableScheduling {
+		return primary(ctx, cfg, stdout, stderr)
+	}
+	if scheduler == nil {
+		return errors.New("scheduler runner is required")
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- primary(runCtx, cfg, stdout, stderr)
+	}()
+	go func() {
+		errCh <- scheduler(runCtx, cfg, stdout, stderr)
+	}()
+
+	err := <-errCh
+	cancel()
+	return err
+}
+
 func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
 	errCh := make(chan error, 3)
 	started := 0
