@@ -61,7 +61,7 @@ Build from a clone for development:
 go build ./cmd/assistant
 ```
 
-Run without installing:
+From a source checkout, run without installing:
 
 ```sh
 go run ./cmd/assistant --provider openai-oauth
@@ -90,7 +90,7 @@ Telegram bot with OpenAI OAuth:
 
 ```sh
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
-go run ./cmd/assistant telegram --provider openai-oauth --permission read-only --max-turns 100
+assistant telegram --provider openai-oauth --permission read-only --max-turns 100
 ```
 
 Assistant reads OpenAI OAuth credentials from `~/.codex/auth.json` by default.
@@ -100,19 +100,19 @@ port is required.
 Interactive OAuth mode:
 
 ```sh
-go run ./cmd/assistant --provider openai-oauth --permission read-only --max-turns 100
+assistant --provider openai-oauth --permission read-only --max-turns 100
 ```
 
 Single prompt:
 
 ```sh
-go run ./cmd/assistant --provider openai-api --permission read-only --max-turns 100 "summarize my current directory"
+assistant --provider openai-api --permission read-only --max-turns 100 "summarize my current directory"
 ```
 
 Interactive API-key mode:
 
 ```sh
-OPENAI_API_KEY=sk-... go run ./cmd/assistant --provider openai-api --permission read-only --max-turns 100
+OPENAI_API_KEY=sk-... assistant --provider openai-api --permission read-only --max-turns 100
 ```
 
 Telegram with API-key mode:
@@ -120,13 +120,13 @@ Telegram with API-key mode:
 ```sh
 export OPENAI_API_KEY='sk-...'
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
-go run ./cmd/assistant telegram --provider openai-api --permission read-only --max-turns 100
+assistant telegram --provider openai-api --permission read-only --max-turns 100
 ```
 
 Quiet smoke test with no tools or local extensions:
 
 ```sh
-go run ./cmd/assistant --provider openai-oauth --permission read-only --max-turns 100 --tools=false --project-state=false "reply with exactly: assistant works"
+assistant --provider openai-oauth --permission read-only --max-turns 100 --tools=false --project-state=false "reply with exactly: assistant works"
 ```
 
 If you use `.env`, copy `.env.example`, fill in the values you need, then load
@@ -141,7 +141,7 @@ set +a
 Schedule daemon:
 
 ```sh
-go run ./cmd/assistant schedule --provider openai-oauth --permission read-only --max-turns 100
+assistant schedule --provider openai-oauth --permission read-only --max-turns 100
 ```
 
 Ask Assistant to add a reminder or recurring cron from the REPL, then keep
