@@ -59,6 +59,38 @@ assistant --provider openai-oauth --approval=false "what editor do I prefer?"
 
 With approvals enabled, approve the relevant memory tool calls when prompted.
 
+## Scheduling
+
+Scheduling tools are enabled by default. Ask the assistant to create a
+reminder, recurring cron, or scheduled follow-up from the REPL or any channel
+that can run tools.
+
+Scheduled jobs are stored in
+`~/.gratefulagents/assistant/state/schedules.json` by default. Override the
+state directory with `--state-dir` or `ASSISTANT_STATE_DIR`.
+
+Supported triggers:
+
+```text
+cron           standard five-field cron, parsed by github.com/robfig/cron/v3
+every_seconds  fixed interval in seconds, minimum 10
+run_at         one-time RFC3339 or YYYY-MM-DD HH:MM timestamp
+timezone       optional IANA timezone such as America/New_York
+```
+
+Run due scheduled prompts:
+
+```sh
+assistant schedule --provider openai-oauth
+```
+
+`assistant poll` also runs the scheduler alongside Telegram and Gmail. Keep one
+of those long-running commands active for scheduled jobs to fire.
+
+For unattended scheduled prompts, review the tool and approval settings. If a
+scheduled prompt tries to use an approval-gated tool, the run records an error
+because the scheduler cannot answer interactive approval prompts.
+
 ## MCP
 
 MCP is disabled by default. Enable it with:
@@ -153,6 +185,13 @@ ASSISTANT_TELEGRAM_BOT_TOKEN       required unless --telegram-bot-token is set
 ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
 ```
 
+Telegram replies are sent with Bot API HTML formatting enabled. Assistant may
+use Telegram-supported rich text such as bold, italic, underline,
+strikethrough, spoilers, links, custom emoji, time entities, inline code,
+preformatted code, and block quotes. Telegram messages do not support native
+table markup, so tabular answers are rendered as aligned text inside
+preformatted blocks.
+
 The last processed Telegram update offset is stored in the assistant state
 directory. By default that is
 `~/.gratefulagents/assistant/state/telegram_offset.json`; override the state
@@ -204,8 +243,9 @@ Run every configured polling channel together:
 assistant poll --provider openai-oauth
 ```
 
-At least one of `ASSISTANT_TELEGRAM_BOT_TOKEN`,
-`ASSISTANT_GMAIL_ACCESS_TOKEN`, or `ASSISTANT_GMAIL_TOKEN` must be set.
+`assistant poll` starts Telegram when `ASSISTANT_TELEGRAM_BOT_TOKEN` is set,
+Gmail when `ASSISTANT_GMAIL_ACCESS_TOKEN` or `ASSISTANT_GMAIL_TOKEN` is set,
+and the scheduler when `--scheduling=true`.
 
 ## Local Gateway
 

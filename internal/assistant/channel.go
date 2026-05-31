@@ -38,7 +38,11 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage) (str
 	if msg.Thread != "" {
 		prompt += " in thread " + msg.Thread
 	}
-	prompt += ":\n\n" + text
+	prompt += "."
+	if strings.EqualFold(msg.Channel, "telegram") {
+		prompt += "\n\n" + telegramReplyFormattingInstructions()
+	}
+	prompt += "\n\nMessage:\n\n" + text
 	return runPromptText(ctx, cfg, prompt)
 }
 

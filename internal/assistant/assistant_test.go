@@ -215,6 +215,88 @@ func TestDecodeTelegramUpdates(t *testing.T) {
 	}
 }
 
+func TestTelegramHTMLMessagePreservesSupportedFormatting(t *testing.T) {
+	input := strings.Join([]string{
+		`<b>Weather</b>`,
+		`<blockquote expandable>Details tomorrow</blockquote>`,
+		`<tg-spoiler>Possible rain</tg-spoiler>`,
+		`<tg-time unix="1647531900" format="r">soon</tg-time>`,
+	}, "\n")
+	got := telegramHTMLMessage(input)
+	for _, want := range []string{
+		`<b>Weather</b>`,
+		`<blockquote expandable>Details tomorrow</blockquote>`,
+		`<tg-spoiler>Possible rain</tg-spoiler>`,
+		`<tg-time unix="1647531900" format="r">soon</tg-time>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("telegramHTMLMessage missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestTelegramHTMLMessageConvertsMarkdownTableToPre(t *testing.T) {
+	input := strings.Join([]string{
+		`<b>Forecast</b>`,
+		``,
+		`| Time | Temp | Conditions |`,
+		`| --- | --- | --- |`,
+		`| Now | 72 F | Clear |`,
+		`| Tonight | 61 F | Cloudy |`,
+	}, "\n")
+	got := telegramHTMLMessage(input)
+	for _, want := range []string{
+		`<pre>Time`,
+		`Temp`,
+		`Conditions`,
+		`Tonight`,
+		`</pre>`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("telegramHTMLMessage missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "| --- |") {
+		t.Fatalf("telegramHTMLMessage kept markdown separator: %q", got)
+	}
+}
+
+func TestTelegramHTMLMessageConvertsMarkdownFenceToPreCode(t *testing.T) {
+	input := "```python\nprint('hi')\n```"
+	got := telegramHTMLMessage(input)
+	want := `<pre><code class="language-python">print(&#39;hi&#39;)</code></pre>`
+	if got != want {
+		t.Fatalf("telegramHTMLMessage = %q, want %q", got, want)
+	}
+}
+
+func TestTelegramHTMLMessageDropsUnsupportedHTMLAndEscapesText(t *testing.T) {
+	got := telegramHTMLMessage(`5 < 7 & <table><tr><td>x</td></tr></table><script>alert(1)</script>`)
+	for _, bad := range []string{"<table", "<tr", "<td", "<script"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("telegramHTMLMessage kept unsupported tag %q in %q", bad, got)
+		}
+	}
+	for _, want := range []string{"5 &lt; 7 &amp;", "x", "alert(1)"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("telegramHTMLMessage missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestTelegramPlainTextRemovesMarkup(t *testing.T) {
+	got := telegramPlainText(`<b>Forecast</b><pre>Time  Temp
+Now   72 F</pre>`)
+	for _, want := range []string{"Forecast", "Time  Temp", "Now   72 F"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("telegramPlainText missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "<b>") || strings.Contains(got, "<pre>") {
+		t.Fatalf("telegramPlainText kept markup: %q", got)
+	}
+}
+
 func TestTelegramOffsetStateRoundTrip(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.StateDir = t.TempDir()

@@ -11,7 +11,7 @@ import (
 )
 
 func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	started := 0
 	if strings.TrimSpace(cfg.TelegramBotToken) != "" {
 		started++
@@ -25,8 +25,14 @@ func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 			errCh <- runGmailPoller(ctx, cfg, stdout, stderr)
 		}()
 	}
+	if cfg.EnableScheduling {
+		started++
+		go func() {
+			errCh <- runScheduler(ctx, cfg, stdout, stderr)
+		}()
+	}
 	if started == 0 {
-		return errors.New("poll requires ASSISTANT_TELEGRAM_BOT_TOKEN and/or ASSISTANT_GMAIL_ACCESS_TOKEN")
+		return errors.New("poll requires ASSISTANT_TELEGRAM_BOT_TOKEN, ASSISTANT_GMAIL_ACCESS_TOKEN, or --scheduling=true")
 	}
 	fmt.Fprintf(stderr, "assistant polling %d channel(s); no inbound port required\n", started)
 	for completed := 0; completed < started; completed++ {

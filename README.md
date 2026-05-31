@@ -12,6 +12,7 @@ Kubernetes, or local-model runtime dependency.
 - OpenAI provider support through OAuth credentials or an API key.
 - Interactive REPL and one-shot prompt execution.
 - SDK tools, guardrails, approvals, compaction, and durable memory.
+- Durable scheduled prompts with one-time, interval, and cron triggers.
 - Optional MCP servers from workspace, user, and extension config files.
 - Optional skill discovery, install, and catalog tools.
 - Outbound polling integrations for Telegram and Gmail.
@@ -87,6 +88,15 @@ copy `.env.example`, fill in `ASSISTANT_TELEGRAM_BOT_TOKEN`, then load it with
 your shell or `direnv` before running the command. Telegram polling uses
 outbound requests only, so no public webhook or inbound port is required.
 
+Schedule daemon:
+
+```sh
+go run ./cmd/assistant schedule --provider openai-oauth
+```
+
+Ask Assistant to add a reminder or recurring cron from the REPL, then keep
+`assistant schedule` or `assistant poll` running for due jobs to execute.
+
 ## Common Flags
 
 ```text
@@ -101,6 +111,7 @@ outbound requests only, so no public webhook or inbound port is required.
 --mcp-config        extra MCP config file; repeatable
 --skills            enable SDK skill search/install/list tools
 --skill-catalog     optional custom skill catalog JSON
+--scheduling        enable durable schedule tools
 --project-state     enable durable assistant memory/tasks
 --state-dir         filesystem state directory
 --guardrails        enable SDK guardrails
@@ -119,6 +130,7 @@ assistant "prompt"              # one-shot prompt
 assistant serve                 # local authenticated JSON gateway
 assistant telegram              # Telegram long polling
 assistant gmail                 # Gmail polling
+assistant schedule              # run scheduled prompts
 assistant poll                  # run every configured poller
 ```
 

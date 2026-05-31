@@ -38,6 +38,7 @@ type appConfig struct {
 	EnableTools          bool
 	EnableMCP            bool
 	EnableSkills         bool
+	EnableScheduling     bool
 	EnableProjectState   bool
 	EnableApproval       bool
 	EnableGuardrails     bool
@@ -88,6 +89,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.BoolVar(&cfg.EnableTools, "tools", cfg.EnableTools, "enable SDK tools")
 	fs.BoolVar(&cfg.EnableMCP, "mcp", cfg.EnableMCP, "load MCP tools from extension config and .mcp.json")
 	fs.BoolVar(&cfg.EnableSkills, "skills", cfg.EnableSkills, "enable SDK skill discovery/install tools")
+	fs.BoolVar(&cfg.EnableScheduling, "scheduling", cfg.EnableScheduling, "enable schedule tools and poll-mode scheduler")
 	fs.BoolVar(&cfg.EnableProjectState, "project-state", cfg.EnableProjectState, "enable durable memory and task tools")
 	fs.BoolVar(&cfg.EnableApproval, "approval", cfg.EnableApproval, "ask before tool execution")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
@@ -141,6 +143,7 @@ func defaultConfig() appConfig {
 		EnableTools:          envBool("ASSISTANT_TOOLS", true),
 		EnableMCP:            envBool("ASSISTANT_MCP", false),
 		EnableSkills:         envBool("ASSISTANT_SKILLS", false),
+		EnableScheduling:     envBool("ASSISTANT_SCHEDULING", true),
 		EnableProjectState:   envBool("ASSISTANT_PROJECT_STATE", true),
 		EnableApproval:       envBool("ASSISTANT_APPROVAL", true),
 		EnableGuardrails:     envBool("ASSISTANT_GUARDRAILS", true),
@@ -282,9 +285,11 @@ extension config:
   --config PATH             assistant JSON config; defaults to ~/.gratefulagents/assistant/config.json
   --mcp-config PATH         add an MCP config; repeat for any number of servers/bundles
   --skills                  expose SDK skill search/install/list tools
+  --scheduling              expose schedule tools and run scheduler in poll mode
 
 examples:
   assistant --provider openai-oauth
+  assistant schedule --provider openai-oauth
   assistant telegram --provider openai-oauth
   assistant gmail --provider openai-oauth --gmail-query "is:unread"
   assistant poll --provider openai-oauth

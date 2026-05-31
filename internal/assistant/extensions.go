@@ -76,6 +76,9 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 		}
 		bundle.ExtraTools = append(bundle.ExtraTools, tools...)
 	}
+	if cfg.EnableScheduling {
+		bundle.ExtraTools = append(bundle.ExtraTools, scheduleTools(cfg)...)
+	}
 	if cfg.EnableSkills {
 		tools, err := skillTools(cfg)
 		if err != nil {

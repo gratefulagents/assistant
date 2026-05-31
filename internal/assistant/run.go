@@ -42,6 +42,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runTelegramPoller(ctx, cfg, stdout, stderr)
 	case "gmail":
 		err = runGmailPoller(ctx, cfg, stdout, stderr)
+	case "schedule":
+		err = runScheduler(ctx, cfg, stdout, stderr)
 	case "poll":
 		err = runPollers(ctx, cfg, stdout, stderr)
 	default:
@@ -60,7 +62,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func isCommand(arg string) bool {
 	switch arg {
-	case "serve", "telegram", "gmail", "poll":
+	case "serve", "telegram", "gmail", "schedule", "poll":
 		return true
 	default:
 		return false

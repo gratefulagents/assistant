@@ -48,6 +48,7 @@ ASSISTANT_MAX_TURNS            8
 ASSISTANT_MAX_TOKENS           1200
 ASSISTANT_TOOL_TIMEOUT         0
 ASSISTANT_TOOLS                true
+ASSISTANT_SCHEDULING           true
 ASSISTANT_PROJECT_STATE        true
 ASSISTANT_APPROVAL             true
 ASSISTANT_GUARDRAILS           true
@@ -117,6 +118,26 @@ assistant --skills --skill-catalog ~/.gratefulagents/assistant/skills.json
 
 The custom catalog file is JSON with a top-level `skills` array understood by
 the SDK skill registry.
+
+## Scheduling
+
+Schedule tools are enabled by default with `--scheduling=true` and store
+durable jobs in the state directory. Start the scheduler with:
+
+```sh
+assistant schedule --provider openai-oauth
+```
+
+`assistant poll` also starts the scheduler unless `--scheduling=false` is set.
+Cron expressions use `github.com/robfig/cron/v3` standard five-field syntax,
+for example `0 9 * * MON-FRI`.
+
+Relevant settings:
+
+```text
+ASSISTANT_SCHEDULING            optional; defaults to true
+ASSISTANT_STATE_DIR             stores schedules.json
+```
 
 ## Channel Environment Variables
 
