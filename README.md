@@ -1,0 +1,128 @@
+# Assistant
+
+`github.com/gratefulagents/assistant` is a lightweight personal AI assistant
+host built in Go on top of `github.com/gratefulagents/sdk`.
+
+The project is intentionally small: one command, a private `internal/assistant`
+implementation package, config-driven integrations, and no TUI, desktop,
+Kubernetes, or local-model runtime dependency.
+
+## Features
+
+- OpenAI provider support through OAuth credentials or an API key.
+- Interactive REPL and one-shot prompt execution.
+- SDK tools, guardrails, approvals, compaction, and durable memory.
+- Optional MCP servers from workspace, user, and extension config files.
+- Optional skill discovery, install, and catalog tools.
+- Outbound polling integrations for Telegram and Gmail.
+- Small authenticated local JSON gateway for trusted local automation.
+
+## Install
+
+Requirements:
+
+- Go 1.26.2 or newer.
+- OpenAI OAuth credentials at `~/.codex/auth.json`, or an OpenAI API key.
+
+Build from a clone:
+
+```sh
+go build ./cmd/assistant
+```
+
+Run without installing:
+
+```sh
+go run ./cmd/assistant --provider openai-oauth
+```
+
+## Quick Start
+
+Interactive OAuth mode:
+
+```sh
+go run ./cmd/assistant --provider openai-oauth
+```
+
+Interactive API-key mode:
+
+```sh
+OPENAI_API_KEY=sk-... go run ./cmd/assistant --provider openai-api
+```
+
+Single prompt:
+
+```sh
+go run ./cmd/assistant --provider openai-api "summarize my current directory"
+```
+
+Quiet smoke test with no tools or local extensions:
+
+```sh
+go run ./cmd/assistant --provider openai-oauth --tools=false --project-state=false "reply with exactly: assistant works"
+```
+
+## Common Flags
+
+```text
+--config            assistant extension config JSON
+--provider          openai-oauth or openai-api
+--model             model name
+--workdir           workspace for SDK tools
+--permission        workspace-write or read-only
+--approval          ask before tool execution
+--tools             enable SDK tools
+--mcp               enable MCP servers
+--mcp-config        extra MCP config file; repeatable
+--skills            enable SDK skill search/install/list tools
+--skill-catalog     optional custom skill catalog JSON
+--project-state     enable durable assistant memory/tasks
+--state-dir         filesystem state directory
+--guardrails        enable SDK guardrails
+--compaction        enable SDK context compaction
+```
+
+By default, Assistant enables SDK tools, guardrails, compaction, approvals, and
+model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
+MCP and skill catalog tools are opt-in with `--mcp` and `--skills`.
+
+## Commands
+
+```sh
+assistant                       # interactive REPL
+assistant "prompt"              # one-shot prompt
+assistant serve                 # local authenticated JSON gateway
+assistant telegram              # Telegram long polling
+assistant gmail                 # Gmail polling
+assistant poll                  # run every configured poller
+```
+
+Polling integrations use outbound requests only. You do not need to expose a
+public webhook endpoint.
+
+## Documentation
+
+- [Configuration](docs/configuration.md)
+- [Feature and Integration Guide](docs/features.md)
+- [Development](docs/development.md)
+- [Security Model](docs/security.md)
+
+## Development
+
+Run the standard checks before opening a pull request:
+
+```sh
+gofmt -w cmd internal
+go test ./...
+```
+
+This repository follows the standard Go command layout:
+
+- `cmd/assistant`: executable entrypoint only.
+- `internal/assistant`: private application implementation.
+- `docs`: user and maintainer documentation.
+
+## License
+
+Assistant is released under the GNU General Public License v3.0. See
+[LICENSE](LICENSE).

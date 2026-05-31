@@ -1,0 +1,12 @@
+/.env
+/.env.*
+!/.env.example
+/assistant
+/bin/
+/coverage.out
+/dist/
+/go.work
+/go.work.sum
+*.test
+*.log
+.DS_Store

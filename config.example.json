@@ -1,0 +1,30 @@
+{
+  "mcpConfigPaths": [
+    "~/.gratefulagents/mcp/base.json",
+    "~/projects/home/.mcp.json"
+  ],
+  "mcpServers": {
+    "calendar": {
+      "type": "stdio",
+      "command": "calendar-mcp",
+      "args": ["serve"]
+    }
+  },
+  "skills": {
+    "enabled": true,
+    "catalogPath": "~/.gratefulagents/assistant/skills.json"
+  },
+  "plugins": [
+    {
+      "name": "home-automation",
+      "enabled": true,
+      "mcpConfigPaths": ["~/.gratefulagents/plugins/home/mcp.json"],
+      "mcpServers": {
+        "lights": {
+          "type": "stdio",
+          "command": "lights-mcp"
+        }
+      }
+    }
+  ]
+}
