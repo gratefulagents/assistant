@@ -25,7 +25,8 @@ Requirements:
 - OpenAI OAuth credentials at `~/.codex/auth.json`, or an OpenAI API key.
   To create the OAuth file, run `npx @openai/codex login` and complete the
   browser sign-in flow.
-- Go 1.26.2 or newer, only if you are building from source.
+- Go 1.26.2 or newer, only if you install with `go install` or build from
+  source.
 
 Download a prebuilt binary from
 [GitHub Releases](https://github.com/gratefulagents/assistant/releases):
@@ -53,6 +54,15 @@ curl -L -o assistant \
 chmod +x assistant
 sudo mv assistant /usr/local/bin/assistant
 ```
+
+Install with Go:
+
+```sh
+go install github.com/gratefulagents/assistant/cmd/assistant@latest
+```
+
+`go install` places the binary in `GOBIN`, or `GOPATH/bin` when `GOBIN` is not
+set. Make sure that directory is on your `PATH`.
 
 Build from a clone for development:
 
