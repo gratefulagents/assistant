@@ -33,11 +33,10 @@ builds:
 
 archives:
   - id: assistant
-    ids:
+    builds:
       - assistant
-    formats:
-      - binary
-    name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}{{ .ArtifactExt }}"
+    format: binary
+    name_template: '{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}{{ if eq .Os "windows" }}.exe{{ end }}'
 
 checksum:
   name_template: SHA256SUMS
