@@ -2,7 +2,8 @@ name: Release
 
 on:
   push:
-    branches: [master, main]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   release:
-    name: Tag, release, and upload binaries
+    name: Semantic release
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -30,55 +31,11 @@ jobs:
       - name: Test
         run: go test ./...
 
-      - name: Build binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p dist
-          short_sha="${GITHUB_SHA::12}"
-          version="autobuild-${short_sha}"
-          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          ldflags="-s -w -X github.com/gratefulagents/assistant/internal/assistant.buildVersion=${version} -X github.com/gratefulagents/assistant/internal/assistant.buildCommit=${GITHUB_SHA} -X github.com/gratefulagents/assistant/internal/assistant.buildDate=${build_date}"
-
-          while read -r goos goarch ext; do
-            name="assistant-${goos}-${goarch}${ext}"
-            echo "building ${name}"
-            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}" ./cmd/assistant
-          done <<'EOF'
-          linux amd64
-          linux arm64
-          darwin amd64
-          darwin arm64
-          windows amd64 .exe
-          EOF
-
-          (cd dist && sha256sum * > SHA256SUMS)
-
-      - name: Create tag and GitHub release
+      - name: Release from conventional commits
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          hooks: goreleaser
+          allow-initial-development-versions: true
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          short_sha="${GITHUB_SHA::12}"
-          tag="autobuild-${short_sha}"
-          title="Automated release ${short_sha}"
-
-          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            echo "tag ${tag} already exists"
-          else
-            git tag "${tag}" "${GITHUB_SHA}"
-            git push origin "refs/tags/${tag}"
-          fi
-
-          if gh release view "${tag}" >/dev/null 2>&1; then
-            gh release upload "${tag}" dist/* --clobber
-          else
-            gh release create "${tag}" dist/* \
-              --target "${GITHUB_SHA}" \
-              --title "${title}" \
-              --notes "Automated release for commit ${GITHUB_SHA}."
-          fi
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
