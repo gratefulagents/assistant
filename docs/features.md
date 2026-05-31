@@ -41,6 +41,29 @@ Non-interactive channel modes cannot prompt for approval. For unattended
 Telegram, Gmail, or gateway use, either keep tools scoped so approvals are not
 required or explicitly run with `--approval=false`.
 
+## Audit Output
+
+Audit output is opt-in:
+
+```sh
+assistant --audit --provider openai-api "summarize my current directory"
+```
+
+When enabled, Assistant writes structured audit events for run starts and ends,
+model calls, tool calls and outputs, approval decisions, handoffs, compaction,
+and assistant messages. Events are mirrored to stdout and standard logs, and
+appended as JSON lines to `~/.gratefulagents/assistant/state/audit.ndjson` by
+default. Override the file with `--audit-log` or `ASSISTANT_AUDIT_LOG`.
+
+Use the low audit level when you only need the core trail:
+
+```sh
+assistant --audit --audit-level low --provider openai-api "summarize my current directory"
+```
+
+`low` records only tool calls with their inputs, assistant text, and errors.
+`full` is the default and keeps the complete structured trace.
+
 ## Durable Memory and Tasks
 
 Project-state tools are enabled by default and backed by files under

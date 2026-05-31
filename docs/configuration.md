@@ -54,10 +54,17 @@ ASSISTANT_APPROVAL             true
 ASSISTANT_GUARDRAILS           true
 ASSISTANT_COMPACTION           true
 ASSISTANT_PRIVATE_NETWORK      false
+ASSISTANT_AUDIT                false
+ASSISTANT_AUDIT_LEVEL          full
+ASSISTANT_AUDIT_LOG            ~/.gratefulagents/assistant/state/audit.ndjson
 ```
 
 `--permission read-only` restricts SDK tool access. `--approval=true` asks
 before approval-gated tool execution in interactive mode.
+`--audit=true` mirrors structured run, model, tool, approval, and result events
+to stdout, standard logs, and the append-only audit log path. Set
+`--audit-level low` to record only tool calls with inputs, assistant text, and
+errors.
 
 ## Extension Config File
 

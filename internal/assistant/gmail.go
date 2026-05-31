@@ -89,7 +89,7 @@ func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmai
 			UserID:  gmailHeader(msg, "From"),
 			Thread:  firstNonEmpty(msg.ThreadID, ref.ThreadID),
 			Text:    gmailInboundText(msg),
-		})
+		}, stdout, stderr)
 		if err != nil {
 			fmt.Fprintf(stderr, "gmail assistant warning for %s: %v\n", ref.ID, err)
 		} else if cfg.GmailSendReplies {

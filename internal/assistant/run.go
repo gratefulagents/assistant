@@ -70,7 +70,7 @@ func isCommand(arg string) bool {
 }
 
 func configureLogging(cfg appConfig, stderr io.Writer) {
-	if cfg.Debug {
+	if cfg.Debug || cfg.Audit {
 		log.SetOutput(stderr)
 		return
 	}

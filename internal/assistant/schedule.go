@@ -99,7 +99,7 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 		}
 		label := scheduleLabel(entry)
 		fmt.Fprintf(stderr, "assistant schedule %s running\n", label)
-		reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry))
+		reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry), stdout, stderr)
 		if runErr != nil {
 			_ = finishScheduleRun(cfg, entry.ID, "", runErr)
 			fmt.Fprintf(stderr, "assistant schedule %s failed: %v\n", label, runErr)

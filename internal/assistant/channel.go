@@ -26,7 +26,7 @@ type inboundMessage struct {
 	Raw     json.RawMessage
 }
 
-func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage) (string, error) {
+func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdout, stderr io.Writer) (string, error) {
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
 		return "", errors.New("empty message")
@@ -43,26 +43,50 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage) (str
 		prompt += "\n\n" + telegramReplyFormattingInstructions()
 	}
 	prompt += "\n\nMessage:\n\n" + text
-	return runPromptText(ctx, cfg, prompt)
+	return runPromptText(ctx, cfg, prompt, stdout, stderr)
 }
 
-func runPromptText(ctx context.Context, cfg appConfig, prompt string) (string, error) {
-	input := []agentsdk.RunItem{userMessage(prompt)}
-	bundle, err := buildBundle(ctx, cfg, io.Discard)
+func runPromptText(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer) (string, error) {
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	audit, err := newAuditRecorder(cfg, stdout)
 	if err != nil {
 		return "", err
 	}
-	defer closeBundle(bundle, io.Discard)
+	defer func() { _ = audit.Close() }()
+	audit.EmitRunStart(cfg, prompt)
+
+	input := []agentsdk.RunItem{userMessage(prompt)}
+	bundle, err := buildBundle(ctx, cfg, stderr, audit)
+	if err != nil {
+		audit.EmitRunError(err)
+		return "", err
+	}
+	defer closeBundle(bundle, stderr)
 	result, err := bundle.Runner.Run(ctx, bundle.Agent, cloneRunItems(input), bundle.Config)
 	if err != nil {
+		audit.EmitRunError(err)
 		return "", err
 	}
 	if result == nil {
-		return "", errors.New("runner returned no result")
+		err := errors.New("runner returned no result")
+		audit.EmitRunError(err)
+		return "", err
+	}
+	for i := range result.NewItems {
+		audit.EmitRunItem(&result.NewItems[i])
 	}
 	if result.Interruption != nil {
-		return "", fmt.Errorf("tool %q requires approval; channel mode cannot prompt", result.Interruption.ToolName)
+		audit.EmitApprovalRequest(result.Interruption)
+		err := fmt.Errorf("tool %q requires approval; channel mode cannot prompt", result.Interruption.ToolName)
+		audit.EmitRunError(err)
+		return "", err
 	}
+	audit.EmitRunEnd(result)
 	return strings.TrimSpace(result.FinalText()), nil
 }
 

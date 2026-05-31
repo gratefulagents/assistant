@@ -20,12 +20,12 @@ type extensionBundle struct {
 	ExtraTools []agentsdk.Tool
 }
 
-func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer) (*sdkruntime.Bundle, error) {
+func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *auditRecorder) (*sdkruntime.Bundle, error) {
 	extensions, err := loadExtensions(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
-	builder := sdkruntime.NewBuilder(runtimeConfig(cfg, extensions),
+	builder := sdkruntime.NewBuilder(runtimeConfig(cfg, extensions, audit),
 		sdkruntime.WithStatusFunc(func(text string) {
 			if cfg.Debug {
 				fmt.Fprintln(stderr, "[status]", text)
@@ -38,7 +38,7 @@ func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer) (*sdkrunt
 	return builder.Build(ctx)
 }
 
-func runtimeConfig(cfg appConfig, extensions extensionBundle) sdkruntime.Config {
+func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecorder) sdkruntime.Config {
 	rt := sdkruntime.Config{
 		Provider:                "openai",
 		Model:                   cfg.Model,
@@ -73,6 +73,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle) sdkruntime.Config 
 		EnableProjectState: false,
 		MCPConfig:          extensions.MCPConfig,
 		ExtraTools:         extensions.ExtraTools,
+		TracingProcessor:   audit,
 		FeatureSummary:     featureSummary(cfg, extensions),
 	}
 	switch cfg.Provider {

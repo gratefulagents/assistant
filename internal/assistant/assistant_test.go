@@ -3,6 +3,9 @@
 package assistant
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	sdkmcp "github.com/gratefulagents/sdk/pkg/agentsdk/mcp"
 	sdkopenai "github.com/gratefulagents/sdk/pkg/agentsdk/providers/openai"
 )
@@ -90,6 +94,122 @@ func TestDefaultExtensionsAreOptIn(t *testing.T) {
 	}
 }
 
+func TestAuditRecorderMirrorsStdoutAndFileWithRedaction(t *testing.T) {
+	dir := t.TempDir()
+	cfg := defaultConfig()
+	cfg.Audit = true
+	cfg.AuditLogPath = filepath.Join(dir, "audit.ndjson")
+
+	var stdout strings.Builder
+	audit, err := newAuditRecorder(cfg, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit.EmitRunItem(&agentsdk.RunItem{
+		Type: agentsdk.RunItemToolCall,
+		ToolCall: &agentsdk.ToolCallData{
+			ID:    "call_1",
+			Name:  "Bash",
+			Input: json.RawMessage(`{"cmd":"echo sk-testsecret"}`),
+		},
+	})
+	if err := audit.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "[audit]") || !strings.Contains(out, `"event":"tool_call"`) {
+		t.Fatalf("stdout missing audit event: %q", out)
+	}
+	if strings.Contains(out, "sk-testsecret") {
+		t.Fatalf("stdout leaked secret: %q", out)
+	}
+	data, err := os.ReadFile(cfg.AuditLogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"event":"tool_call"`) {
+		t.Fatalf("audit file missing event: %q", text)
+	}
+	if strings.Contains(text, "sk-testsecret") {
+		t.Fatalf("audit file leaked secret: %q", text)
+	}
+}
+
+func TestLowAuditLevelKeepsOnlyToolInputsAssistantTextAndErrors(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Audit = true
+	cfg.AuditLevel = auditLevelLow
+	cfg.AuditLogPath = filepath.Join(t.TempDir(), "audit.ndjson")
+
+	var stdout strings.Builder
+	audit, err := newAuditRecorder(cfg, &stdout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit.EmitRunStart(cfg, "hidden prompt")
+	audit.EmitRunItem(&agentsdk.RunItem{
+		Type: agentsdk.RunItemToolCall,
+		ToolCall: &agentsdk.ToolCallData{
+			ID:    "call_1",
+			Name:  "Read",
+			Input: json.RawMessage(`{"file":"README.md"}`),
+		},
+	})
+	audit.EmitRunItem(&agentsdk.RunItem{
+		Type:       agentsdk.RunItemToolOutput,
+		ToolOutput: &agentsdk.ToolOutputData{CallID: "call_1", Content: "success"},
+	})
+	audit.EmitRunItem(&agentsdk.RunItem{
+		Type:    agentsdk.RunItemMessage,
+		Message: &agentsdk.MessageOutput{Text: "assistant text"},
+	})
+	audit.EmitRunItem(&agentsdk.RunItem{
+		Type: agentsdk.RunItemToolOutput,
+		ToolOutput: &agentsdk.ToolOutputData{
+			CallID:  "call_2",
+			Content: "failed",
+			IsError: true,
+		},
+	})
+	audit.EmitRunError(errors.New("run failed"))
+	audit.EmitApprovalDecision("Read", json.RawMessage(`{"file":"README.md"}`), true)
+	audit.EmitRunEnd(&agentsdk.RunResult{})
+	if err := audit.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := stdout.String()
+	for _, want := range []string{
+		`"event":"tool_call"`,
+		`"tool":"Read"`,
+		`"input":{"file":"README.md"}`,
+		`"event":"assistant_message"`,
+		`"text":"assistant text"`,
+		`"event":"tool_error"`,
+		`"content":"failed"`,
+		`"event":"run_error"`,
+		`"error":"run failed"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("low audit stdout missing %s in %q", want, out)
+		}
+	}
+	for _, forbidden := range []string{
+		`"event":"run_start"`,
+		`hidden prompt`,
+		`"event":"tool_output"`,
+		`"content":"success"`,
+		`"event":"approval_decision"`,
+		`"event":"run_end"`,
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("low audit stdout included %s in %q", forbidden, out)
+		}
+	}
+}
+
 func TestDurableMemoryToolsAreModelDriven(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.ConfigPath = ""
@@ -110,7 +230,7 @@ func TestDurableMemoryToolsAreModelDriven(t *testing.T) {
 			t.Fatalf("missing durable memory tool %q; names=%v", want, names)
 		}
 	}
-	rt := runtimeConfig(cfg, extensions)
+	rt := runtimeConfig(cfg, extensions, nil)
 	if rt.EnableProjectState {
 		t.Fatal("runtime EnableProjectState = true, want false so host does not auto-prime memory")
 	}
@@ -165,7 +285,7 @@ func TestLoadMergedMCPConfigMergesFilesInlineAndPlugins(t *testing.T) {
 
 func TestGatewayBearerAuthFailsClosed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
-	gw := newGateway(appConfig{})
+	gw := newGateway(appConfig{}, io.Discard, io.Discard)
 	if gw.authorized(req, "") {
 		t.Fatal("empty gateway token authorized request")
 	}

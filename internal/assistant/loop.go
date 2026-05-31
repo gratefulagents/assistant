@@ -56,6 +56,17 @@ func runREPL(ctx context.Context, cfg appConfig, stdin io.Reader, stdout, stderr
 }
 
 func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.Reader, stdout, stderr io.Writer, history *[]agentsdk.RunItem) error {
+	audit, err := newAuditRecorder(cfg, stdout)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := audit.Close(); closeErr != nil {
+			fmt.Fprintln(stderr, "[log] audit close warning:", closeErr)
+		}
+	}()
+	audit.EmitRunStart(cfg, prompt)
+
 	items := []agentsdk.RunItem(nil)
 	if history != nil {
 		items = append(items, (*history)...)
@@ -64,21 +75,27 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 
 	for resumes := 0; ; resumes++ {
 		if resumes > 12 {
-			return errors.New("too many approval resumes")
+			err := errors.New("too many approval resumes")
+			audit.EmitRunError(err)
+			return err
 		}
-		bundle, err := buildBundle(ctx, cfg, stderr)
+		bundle, err := buildBundle(ctx, cfg, stderr, audit)
 		if err != nil {
+			audit.EmitRunError(err)
 			return err
 		}
 
-		wroteDelta, result, runErr := runStream(ctx, bundle, items, stdout, stderr)
+		wroteDelta, result, runErr := runStream(ctx, bundle, items, stdout, stderr, audit)
 		if runErr != nil {
 			closeBundle(bundle, stderr)
+			audit.EmitRunError(runErr)
 			return runErr
 		}
 		if result == nil {
 			closeBundle(bundle, stderr)
-			return errors.New("runner returned no result")
+			err := errors.New("runner returned no result")
+			audit.EmitRunError(err)
+			return err
 		}
 		if !wroteDelta && strings.TrimSpace(result.FinalText()) != "" {
 			fmt.Fprintln(stdout, result.FinalText())
@@ -92,13 +109,19 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 			if history != nil {
 				*history = items
 			}
+			audit.EmitRunEnd(result)
 			return nil
 		}
 
-		approvalItems, err := resolveApproval(ctx, bundle, result.Interruption, approvalIn, stderr)
+		audit.EmitApprovalRequest(result.Interruption)
+		approvalItems, err := resolveApproval(ctx, bundle, result.Interruption, approvalIn, stderr, audit)
 		closeBundle(bundle, stderr)
 		if err != nil {
+			audit.EmitRunError(err)
 			return err
+		}
+		for i := range approvalItems {
+			audit.EmitRunItem(&approvalItems[i])
 		}
 		items = append(items, approvalItems...)
 	}

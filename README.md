@@ -116,11 +116,18 @@ Ask Assistant to add a reminder or recurring cron from the REPL, then keep
 --state-dir         filesystem state directory
 --guardrails        enable SDK guardrails
 --compaction        enable SDK context compaction
+--audit             emit structured audit events to stdout and logs
+--audit-level       low or full
+--audit-log         append-only audit JSONL path
 ```
 
 By default, Assistant enables SDK tools, guardrails, compaction, approvals, and
 model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
 MCP and skill catalog tools are opt-in with `--mcp` and `--skills`.
+Audit output is opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes
+structured events to stdout, standard logs, and
+`~/.gratefulagents/assistant/state/audit.ndjson` by default. Use
+`--audit-level low` for only tool calls with inputs, assistant text, and errors.
 
 ## Commands
 

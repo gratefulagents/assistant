@@ -47,6 +47,19 @@ For unattended channel operation, avoid broad tools, avoid broad MCP configs,
 and use a dedicated working directory. If you set `--approval=false`, the model
 can execute enabled tools without an interactive confirmation prompt.
 
+## Audit Logs
+
+`--audit` records prompts, model call metadata, assistant messages, tool inputs
+and outputs, approval decisions, handoffs, and errors to stdout, standard logs,
+and an append-only JSONL file. Audit logs can contain local file contents,
+message text, and tool output. Assistant redacts common bearer tokens, API
+keys, GitHub tokens, Telegram bot tokens, and JSON fields named like secrets,
+but you should still treat audit logs as sensitive local data.
+
+`--audit-level low` reduces audit output to tool calls with inputs, assistant
+text, and errors. Tool inputs and assistant text can still contain sensitive
+data.
+
 ## Network Access
 
 Private network access is disabled by default for web tools. Turn it on only

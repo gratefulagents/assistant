@@ -44,6 +44,9 @@ type appConfig struct {
 	EnableGuardrails     bool
 	EnableCompaction     bool
 	AllowPrivateNetwork  bool
+	Audit                bool
+	AuditLevel           string
+	AuditLogPath         string
 	Debug                bool
 	Command              string
 	Serve                bool
@@ -95,6 +98,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
 	fs.BoolVar(&cfg.EnableCompaction, "compaction", cfg.EnableCompaction, "enable SDK context compaction")
 	fs.BoolVar(&cfg.AllowPrivateNetwork, "private-network", cfg.AllowPrivateNetwork, "allow web tools to reach private network URLs")
+	fs.BoolVar(&cfg.Audit, "audit", cfg.Audit, "emit structured audit events to stdout and logs")
+	fs.StringVar(&cfg.AuditLevel, "audit-level", cfg.AuditLevel, "audit verbosity: low or full")
+	fs.StringVar(&cfg.AuditLogPath, "audit-log", cfg.AuditLogPath, "append-only audit log path; defaults to state-dir/audit.ndjson")
 	fs.BoolVar(&cfg.Debug, "debug", cfg.Debug, "enable SDK debug logging")
 	fs.StringVar(&cfg.GatewayAddr, "addr", cfg.GatewayAddr, "gateway listen address for serve mode")
 	fs.StringVar(&cfg.GatewayToken, "gateway-token", cfg.GatewayToken, "bearer token for generic gateway endpoint")
@@ -149,6 +155,9 @@ func defaultConfig() appConfig {
 		EnableGuardrails:     envBool("ASSISTANT_GUARDRAILS", true),
 		EnableCompaction:     envBool("ASSISTANT_COMPACTION", true),
 		AllowPrivateNetwork:  envBool("ASSISTANT_PRIVATE_NETWORK", false),
+		Audit:                envBool("ASSISTANT_AUDIT", false),
+		AuditLevel:           firstNonEmpty(os.Getenv("ASSISTANT_AUDIT_LEVEL"), auditLevelFull),
+		AuditLogPath:         strings.TrimSpace(os.Getenv("ASSISTANT_AUDIT_LOG")),
 		GatewayAddr:          firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
 		GatewayToken:         strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
 		TelegramBotToken:     strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
@@ -183,11 +192,16 @@ func (c *appConfig) validate() error {
 		}
 	}
 	c.ConfigPath = expandUserPath(c.ConfigPath)
+	c.AuditLogPath = expandUserPath(c.AuditLogPath)
 	c.SkillCatalogPath = expandUserPath(c.SkillCatalogPath)
 	c.OpenAIOAuthPath = expandUserPath(c.OpenAIOAuthPath)
 	c.OpenAIAccountIDPath = expandUserPath(c.OpenAIAccountIDPath)
 	c.MCPConfigPaths = expandPathList(c.MCPConfigPaths)
 	c.Permission = normalizePermission(c.Permission)
+	c.AuditLevel = normalizeAuditLevel(c.AuditLevel)
+	if c.AuditLevel == "" {
+		return errors.New("--audit-level must be low or full")
+	}
 	if c.TelegramPollTimeout <= 0 {
 		c.TelegramPollTimeout = 50
 	}
@@ -202,6 +216,9 @@ func (c *appConfig) validate() error {
 	}
 	if strings.TrimSpace(c.GmailQuery) == "" {
 		c.GmailQuery = "is:unread"
+	}
+	if c.Audit && strings.TrimSpace(c.AuditLogPath) == "" {
+		c.AuditLogPath = stateFilePath(*c, "audit.ndjson")
 	}
 
 	if err := c.loadFileConfig(); err != nil {
@@ -286,6 +303,9 @@ extension config:
   --mcp-config PATH         add an MCP config; repeat for any number of servers/bundles
   --skills                  expose SDK skill search/install/list tools
   --scheduling              expose schedule tools and run scheduler in poll mode
+  --audit                   emit structured audit events to stdout and logs
+  --audit-level LEVEL       audit verbosity: low or full
+  --audit-log PATH          append audit JSONL to PATH
 
 examples:
   assistant --provider openai-oauth

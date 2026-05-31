@@ -15,12 +15,13 @@ import (
 )
 
 type gateway struct {
-	cfg appConfig
+	cfg    appConfig
+	stdout io.Writer
+	stderr io.Writer
 }
 
 func runGateway(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
-	_ = stdout
-	gw := newGateway(cfg)
+	gw := newGateway(cfg, stdout, stderr)
 	server := &http.Server{
 		Addr:              cfg.GatewayAddr,
 		Handler:           gw.routes(),
@@ -45,8 +46,14 @@ func runGateway(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 	}
 }
 
-func newGateway(cfg appConfig) *gateway {
-	return &gateway{cfg: cfg}
+func newGateway(cfg appConfig, stdout, stderr io.Writer) *gateway {
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	return &gateway{cfg: cfg, stdout: stdout, stderr: stderr}
 }
 
 func (g *gateway) routes() http.Handler {
@@ -97,7 +104,7 @@ func (g *gateway) handleGeneric(ctx context.Context, w http.ResponseWriter, r *h
 		Thread:  in.Thread,
 		Text:    in.Text,
 		Raw:     in.Raw,
-	})
+	}, g.stdout, g.stderr)
 	if err != nil {
 		return err
 	}

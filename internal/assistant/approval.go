@@ -14,7 +14,7 @@ import (
 	sdkruntime "github.com/gratefulagents/sdk/pkg/agentsdk/runtime"
 )
 
-func resolveApproval(ctx context.Context, bundle *sdkruntime.Bundle, pending *agentsdk.Interruption, approvalIn io.Reader, stderr io.Writer) ([]agentsdk.RunItem, error) {
+func resolveApproval(ctx context.Context, bundle *sdkruntime.Bundle, pending *agentsdk.Interruption, approvalIn io.Reader, stderr io.Writer, audit *auditRecorder) ([]agentsdk.RunItem, error) {
 	if pending == nil {
 		return nil, nil
 	}
@@ -28,6 +28,7 @@ func resolveApproval(ctx context.Context, bundle *sdkruntime.Bundle, pending *ag
 	}
 	reply, _ := reader.ReadString('\n')
 	approved := strings.EqualFold(strings.TrimSpace(reply), "y") || strings.EqualFold(strings.TrimSpace(reply), "yes")
+	audit.EmitApprovalDecision(pending.ToolName, pending.ToolInput, approved)
 	items := []agentsdk.RunItem{{
 		Type: agentsdk.RunItemToolApproval,
 		ToolApproval: &agentsdk.ToolApprovalData{
