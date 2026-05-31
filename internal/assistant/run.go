@@ -48,7 +48,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runPollers(ctx, cfg, stdout, stderr)
 	default:
 		if strings.TrimSpace(cfg.Prompt) != "" {
-			err = runPrompt(ctx, cfg, strings.TrimSpace(cfg.Prompt), stdin, stdout, stderr, nil)
+			err = runPrompt(ctx, cfg, strings.TrimSpace(cfg.Prompt), stdin, stdout, stderr, nil, conversationModeChat)
 		} else {
 			err = runREPL(ctx, cfg, stdin, stdout, stderr)
 		}

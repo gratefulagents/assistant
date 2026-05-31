@@ -51,6 +51,7 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 	if token == "" {
 		return errors.New("telegram polling requires --telegram-bot-token or ASSISTANT_TELEGRAM_BOT_TOKEN")
 	}
+	conversations := newConversationStore()
 	offset, err := loadTelegramOffset(cfg)
 	if err != nil {
 		return err
@@ -77,7 +78,7 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 				continue
 			}
 			offset = nextOffset
-			if err := handleTelegramUpdate(ctx, cfg, stdout, stderr, token, update); err != nil {
+			if err := handleTelegramUpdate(ctx, cfg, stdout, stderr, token, update, conversations); err != nil {
 				fmt.Fprintf(stderr, "telegram message warning: %v\n", err)
 			}
 			if err := saveTelegramOffset(cfg, offset); err != nil {
@@ -135,7 +136,7 @@ func decodeTelegramUpdates(data []byte) (telegramUpdatesResponse, error) {
 	return out, err
 }
 
-func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, update telegramUpdate) error {
+func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, update telegramUpdate, conversations *conversationStore) error {
 	text := strings.TrimSpace(update.Message.Text)
 	if text == "" {
 		return nil
@@ -153,7 +154,7 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 		UserID:  userID,
 		Thread:  fmt.Sprintf("%d", chatID),
 		Text:    text,
-	}, stdout, stderr)
+	}, stdout, stderr, conversations)
 	if err != nil {
 		return err
 	}

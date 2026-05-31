@@ -49,6 +49,10 @@ type appConfig struct {
 	AuditLogPath         string
 	Debug                bool
 	Command              string
+	SessionMode          agentsdk.SessionMode
+	ActiveMode           string
+	ActivePhase          string
+	ModeDirectiveText    string
 	Serve                bool
 	GatewayAddr          string
 	GatewayToken         string

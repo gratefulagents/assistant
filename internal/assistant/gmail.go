@@ -52,12 +52,13 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 	if err != nil {
 		return err
 	}
+	conversations := newConversationStore()
 	fmt.Fprintf(stderr, "assistant gmail polling query=%q; no inbound port required\n", cfg.GmailQuery)
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		if err := pollGmailOnce(ctx, cfg, token, &state, stdout, stderr); err != nil {
+		if err := pollGmailOnce(ctx, cfg, token, &state, stdout, stderr, conversations); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -69,7 +70,7 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 	}
 }
 
-func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmailSeenState, stdout, stderr io.Writer) error {
+func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmailSeenState, stdout, stderr io.Writer, conversations *conversationStore) error {
 	refs, err := listGmailMessages(ctx, cfg, token)
 	if err != nil {
 		return err
@@ -89,7 +90,7 @@ func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmai
 			UserID:  gmailHeader(msg, "From"),
 			Thread:  firstNonEmpty(msg.ThreadID, ref.ThreadID),
 			Text:    gmailInboundText(msg),
-		}, stdout, stderr)
+		}, stdout, stderr, conversations)
 		if err != nil {
 			fmt.Fprintf(stderr, "gmail assistant warning for %s: %v\n", ref.ID, err)
 		} else if cfg.GmailSendReplies {

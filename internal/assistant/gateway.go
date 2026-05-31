@@ -15,9 +15,10 @@ import (
 )
 
 type gateway struct {
-	cfg    appConfig
-	stdout io.Writer
-	stderr io.Writer
+	cfg           appConfig
+	stdout        io.Writer
+	stderr        io.Writer
+	conversations *conversationStore
 }
 
 func runGateway(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
@@ -53,7 +54,7 @@ func newGateway(cfg appConfig, stdout, stderr io.Writer) *gateway {
 	if stderr == nil {
 		stderr = io.Discard
 	}
-	return &gateway{cfg: cfg, stdout: stdout, stderr: stderr}
+	return &gateway{cfg: cfg, stdout: stdout, stderr: stderr, conversations: newConversationStore()}
 }
 
 func (g *gateway) routes() http.Handler {
@@ -104,7 +105,7 @@ func (g *gateway) handleGeneric(ctx context.Context, w http.ResponseWriter, r *h
 		Thread:  in.Thread,
 		Text:    in.Text,
 		Raw:     in.Raw,
-	}, g.stdout, g.stderr)
+	}, g.stdout, g.stderr, g.conversations)
 	if err != nil {
 		return err
 	}

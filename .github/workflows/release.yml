@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag, release, and upload binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          while read -r goos goarch ext; do
+            name="assistant-${goos}-${goarch}${ext}"
+            echo "building ${name}"
+            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
+              go build -trimpath -ldflags "-s -w" -o "dist/${name}" ./cmd/assistant
+          done <<'EOF'
+          linux amd64
+          linux arm64
+          darwin amd64
+          darwin arm64
+          windows amd64 .exe
+          EOF
+
+          (cd dist && sha256sum * > SHA256SUMS)
+
+      - name: Create tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          short_sha="${GITHUB_SHA::12}"
+          tag="autobuild-${short_sha}"
+          title="Automated release ${short_sha}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists"
+          else
+            git tag "${tag}" "${GITHUB_SHA}"
+            git push origin "refs/tags/${tag}"
+          fi
+
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            gh release upload "${tag}" dist/* --clobber
+          else
+            gh release create "${tag}" dist/* \
+              --target "${GITHUB_SHA}" \
+              --title "${title}" \
+              --notes "Automated release for commit ${GITHUB_SHA}."
+          fi

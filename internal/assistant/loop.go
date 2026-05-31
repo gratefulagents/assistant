@@ -17,7 +17,7 @@ func runREPL(ctx context.Context, cfg appConfig, stdin io.Reader, stdout, stderr
 	fmt.Fprintf(stderr, "assistant %s model=%s workdir=%s\n", cfg.Provider, cfg.Model, cfg.WorkDir)
 	fmt.Fprintln(stderr, "type /exit to quit")
 
-	var history []agentsdk.RunItem
+	session := newConversationSession()
 	reader := bufio.NewReader(stdin)
 	for {
 		fmt.Fprint(stderr, "\n> ")
@@ -37,25 +37,31 @@ func runREPL(ctx context.Context, cfg appConfig, stdin io.Reader, stdout, stderr
 			}
 			continue
 		}
-		switch strings.ToLower(prompt) {
-		case "/exit", "/quit":
-			return nil
-		case "/clear":
-			history = nil
-			fmt.Fprintln(stderr, "history cleared")
+		readErr := err
+		if command := handleSlashCommand(prompt, session, true); command.Handled {
+			if command.Exit {
+				return nil
+			}
+			if strings.TrimSpace(command.Reply) != "" {
+				fmt.Fprintln(stderr, command.Reply)
+			}
 			continue
 		}
-		if err := runPrompt(ctx, cfg, prompt, reader, stdout, stderr, &history); err != nil {
-			return err
+		session.mu.Lock()
+		runErr := runPrompt(ctx, cfg, prompt, reader, stdout, stderr, &session.history, session.currentModeLocked())
+		session.mu.Unlock()
+		if runErr != nil {
+			return runErr
 		}
-		if errors.Is(err, io.EOF) {
+		if errors.Is(readErr, io.EOF) {
 			break
 		}
 	}
 	return nil
 }
 
-func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.Reader, stdout, stderr io.Writer, history *[]agentsdk.RunItem) error {
+func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.Reader, stdout, stderr io.Writer, history *[]agentsdk.RunItem, mode string) error {
+	cfg = applyConversationMode(cfg, mode)
 	audit, err := newAuditRecorder(cfg, stdout)
 	if err != nil {
 		return err

@@ -11,6 +11,7 @@ Kubernetes, or local-model runtime dependency.
 
 - OpenAI provider support through OAuth credentials or an API key.
 - Interactive REPL and one-shot prompt execution.
+- Per-conversation in-process history with host-side slash commands.
 - SDK tools, guardrails, approvals, compaction, and durable memory.
 - Durable scheduled prompts with one-time, interval, and cron triggers.
 - Optional MCP servers from workspace, user, and extension config files.
@@ -150,6 +151,11 @@ Audit output is opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes
 structured events to stdout, standard logs, and
 `~/.gratefulagents/assistant/state/audit.ndjson` by default. Use
 `--audit-level low` for only tool calls with inputs, assistant text, and errors.
+
+Interactive and channel conversations retain history for the lifetime of the
+running process. Telegram keys history by chat, Gmail by thread, and the local
+gateway by `thread_id` with `user_id` as a fallback. Slash commands are handled
+by the host: `/plan`, `/chat`, `/mode <name>`, `/clear`, `/stop`, and `/help`.
 
 ## Security
 

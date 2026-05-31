@@ -15,8 +15,26 @@ REPL commands:
 ```text
 /exit      quit
 /quit      quit
-/clear     clear in-memory chat history
+/plan      switch this conversation to planning mode
+/chat      switch this conversation to chat mode
+/mode NAME set a custom mode label
+/clear     clear this conversation's in-memory history
+/stop      stop an active run when supported
+/help      show slash command help
 ```
+
+## Slash Commands and History
+
+Slash commands are handled by the host before a message reaches the model.
+`/plan` switches the current conversation to read-only planning mode. `/chat`
+returns to normal chat mode. `/mode NAME` sets a custom mode label that is
+included in runtime context for later turns. `/clear` clears only the current
+conversation history and keeps the current mode.
+
+Interactive sessions, Telegram, Gmail, and the local gateway keep separate
+in-process histories for each conversation while the process is running.
+Telegram keys conversations by chat ID, Gmail by thread ID, and the gateway by
+`thread_id` with `user_id` as a fallback.
 
 ## One-Shot Prompt
 
@@ -220,6 +238,9 @@ directory. By default that is
 `~/.gratefulagents/assistant/state/telegram_offset.json`; override the state
 directory with `--state-dir` or `ASSISTANT_STATE_DIR`.
 
+Telegram conversation history is kept per chat ID for the lifetime of the
+poller process. Send `/clear` in a chat to clear only that chat's history.
+
 For unattended Telegram use, review the tool and approval settings. Channel
 modes cannot answer interactive approval prompts, so either run with narrow or
 read-only tool access, or set `--approval=false` only for a workspace and tool
@@ -257,6 +278,8 @@ Useful flags:
 ```
 
 Processed Gmail message IDs are stored in the assistant state directory.
+Gmail conversation history is kept per Gmail thread ID for the lifetime of the
+poller process.
 
 ## Combined Polling
 
@@ -294,6 +317,10 @@ curl -s http://localhost:8080/v1/messages \
   -H "authorization: Bearer $ASSISTANT_GATEWAY_TOKEN" \
   -d '{"channel":"generic","user_id":"me","text":"remember that I like vim"}'
 ```
+
+Set `thread_id` to keep independent gateway conversations. If `thread_id` is
+omitted, Assistant uses `user_id` as the conversation key. Send `/clear` to
+clear that conversation's in-process history.
 
 The gateway fails closed unless `ASSISTANT_GATEWAY_TOKEN` or `--gateway-token`
 is set and supplied as a bearer token.

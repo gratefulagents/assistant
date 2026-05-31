@@ -39,6 +39,18 @@ func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *au
 }
 
 func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecorder) sdkruntime.Config {
+	sessionMode := cfg.SessionMode
+	if sessionMode == "" {
+		sessionMode = agentsdk.SessionModeChat
+	}
+	activeMode := strings.TrimSpace(cfg.ActiveMode)
+	if activeMode == "" {
+		activeMode = "assistant"
+	}
+	activePhase := strings.TrimSpace(cfg.ActivePhase)
+	if activePhase == "" {
+		activePhase = "chat"
+	}
 	rt := sdkruntime.Config{
 		Provider:                "openai",
 		Model:                   cfg.Model,
@@ -47,9 +59,9 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		WorkDir:                 cfg.WorkDir,
 		AgentName:               "assistant",
 		Instructions:            defaultInstructions(),
-		SessionMode:             agentsdk.SessionModeChat,
-		ActiveMode:              "assistant",
-		ActivePhase:             "chat",
+		SessionMode:             sessionMode,
+		ActiveMode:              activeMode,
+		ActivePhase:             activePhase,
 		Reasoning:               cfg.Reasoning,
 		Verbosity:               cfg.Verbosity,
 		MaxTurns:                cfg.MaxTurns,
@@ -75,6 +87,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		ExtraTools:         extensions.ExtraTools,
 		TracingProcessor:   audit,
 		FeatureSummary:     featureSummary(cfg, extensions),
+		ModeDirectiveText:  strings.TrimSpace(cfg.ModeDirectiveText),
 	}
 	switch cfg.Provider {
 	case providerOpenAIOAuth:
