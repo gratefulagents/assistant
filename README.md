@@ -70,6 +70,12 @@ Build from a clone for development:
 go build ./cmd/assistant
 ```
 
+Check the installed binary:
+
+```sh
+assistant version
+```
+
 From a source checkout, run without installing:
 
 ```sh
@@ -193,9 +199,9 @@ structured events to stdout, standard logs, and
 Interactive and channel conversations retain history for the lifetime of the
 running process. Telegram keys history by chat, Gmail by thread, and the local
 gateway by `thread_id` with `user_id` as a fallback. Slash commands are handled
-by the host: `/start`, `/help`, `/plan`, `/chat`, `/mode <name>`, `/clear`,
-and `/stop`. Telegram also exposes the common commands through its bot menu and
-adds inline action buttons to assistant replies.
+by the host: `/start`, `/help`, `/version`, `/plan`, `/chat`, `/mode <name>`,
+`/clear`, and `/stop`. Telegram also exposes the common commands through its
+bot menu and adds inline action buttons to assistant replies.
 
 ## Security
 

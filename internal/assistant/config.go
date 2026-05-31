@@ -312,6 +312,7 @@ extension config:
   --audit-log PATH          append audit JSONL to PATH
 
 examples:
+  assistant version
   assistant --provider openai-oauth
   assistant schedule --provider openai-oauth
   assistant telegram --provider openai-oauth

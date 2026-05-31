@@ -14,6 +14,10 @@ import (
 
 // Run executes the assistant command and returns a process exit code.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && isVersionCommand(args[0]) {
+		fmt.Fprintln(stdout, versionText())
+		return 0
+	}
 	command := ""
 	if len(args) > 0 && isCommand(args[0]) {
 		command = args[0]
@@ -64,7 +68,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func isCommand(arg string) bool {
 	switch arg {
-	case "serve", "telegram", "gmail", "schedule", "poll":
+	case "serve", "telegram", "gmail", "schedule", "poll", "version":
+		return true
+	default:
+		return false
+	}
+}
+
+func isVersionCommand(arg string) bool {
+	switch strings.TrimSpace(strings.ToLower(arg)) {
+	case "version", "--version", "-version":
 		return true
 	default:
 		return false

@@ -91,6 +91,18 @@ func TestSlashStartShowsHelp(t *testing.T) {
 	}
 }
 
+func TestSlashVersionShowsBuildInfo(t *testing.T) {
+	got := handleSlashCommand("/version", newConversationSession(), false)
+	if !got.Handled {
+		t.Fatalf("/version result = %#v, want handled", got)
+	}
+	for _, want := range []string{"assistant ", "commit:", "built:", "go:"} {
+		if !strings.Contains(got.Reply, want) {
+			t.Fatalf("/version reply missing %q in %q", want, got.Reply)
+		}
+	}
+}
+
 func TestSlashExitOnlyAllowedInREPL(t *testing.T) {
 	if got := handleSlashCommand("/exit", newConversationSession(), false); !got.Handled || got.Exit {
 		t.Fatalf("non-REPL /exit result = %#v, want handled non-exit", got)

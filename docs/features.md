@@ -15,21 +15,24 @@ REPL commands:
 ```text
 /exit      quit
 /quit      quit
+/start     show slash command help
+/help      show slash command help
+/version   show assistant version and build information
 /plan      switch this conversation to planning mode
 /chat      switch this conversation to chat mode
 /mode NAME set a custom mode label
 /clear     clear this conversation's in-memory history
 /stop      stop an active run when supported
-/help      show slash command help
 ```
 
 ## Slash Commands and History
 
 Slash commands are handled by the host before a message reaches the model.
-`/plan` switches the current conversation to read-only planning mode. `/chat`
-returns to normal chat mode. `/mode NAME` sets a custom mode label that is
-included in runtime context for later turns. `/clear` clears only the current
-conversation history and keeps the current mode.
+`/version` reports the running assistant build. `/plan` switches the current
+conversation to read-only planning mode. `/chat` returns to normal chat mode.
+`/mode NAME` sets a custom mode label that is included in runtime context for
+later turns. `/clear` clears only the current conversation history and keeps the
+current mode.
 
 Interactive sessions, Telegram, Gmail, and the local gateway keep separate
 in-process histories for each conversation while the process is running.
@@ -236,11 +239,12 @@ table markup, so tabular answers are rendered as aligned text inside
 preformatted blocks.
 
 When the Telegram poller starts, Assistant registers a command menu for common
-actions: `/start`, `/help`, `/clear`, `/plan`, `/chat`, and `/stop`. Replies
-also include inline buttons for clearing chat history, switching between plan
-and chat mode, and showing help. Telegram supports bot command menus and
-message-attached inline keyboards; it does not provide bots with a custom fixed
-toolbar at the top of the chat.
+actions: `/start`, `/help`, `/version`, `/clear`, `/plan`, `/chat`, and
+`/stop`. Replies also include inline buttons for clearing chat history,
+switching between plan and chat mode, showing help, and checking the running
+version. Telegram supports bot command menus and message-attached inline
+keyboards; it does not provide bots with a custom fixed toolbar at the top of
+the chat.
 
 The last processed Telegram update offset is stored in the assistant state
 directory. By default that is

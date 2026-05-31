@@ -67,6 +67,7 @@ func telegramBotCommands() []telegramBotCommand {
 	return []telegramBotCommand{
 		{Command: "start", Description: "Show assistant commands"},
 		{Command: "help", Description: "Show assistant commands"},
+		{Command: "version", Description: "Show assistant version and build information"},
 		{Command: "clear", Description: "Clear this chat's assistant history"},
 		{Command: "plan", Description: "Switch this chat to planning mode"},
 		{Command: "chat", Description: "Switch this chat to chat mode"},
@@ -84,6 +85,7 @@ func telegramControlKeyboard() map[string]any {
 			},
 			{
 				{"text": "Help", "callback_data": "assistant:/help"},
+				{"text": "Version", "callback_data": "assistant:/version"},
 			},
 		},
 	}
@@ -262,7 +264,7 @@ func telegramCallbackCommand(data string) string {
 		return ""
 	}
 	switch command := strings.TrimSpace(strings.TrimPrefix(data, prefix)); command {
-	case "/clear", "/plan", "/chat", "/help":
+	case "/clear", "/plan", "/chat", "/help", "/version":
 		return command
 	default:
 		return ""
@@ -272,6 +274,9 @@ func telegramCallbackCommand(data string) string {
 func telegramCallbackNotice(command, reply string) string {
 	if command == "/help" {
 		return "Help sent"
+	}
+	if command == "/version" {
+		return "Version sent"
 	}
 	reply = firstLine(strings.TrimSpace(reply))
 	if reply == "" {

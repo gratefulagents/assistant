@@ -36,11 +36,16 @@ jobs:
           set -euo pipefail
 
           mkdir -p dist
+          short_sha="${GITHUB_SHA::12}"
+          version="autobuild-${short_sha}"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w -X github.com/gratefulagents/assistant/internal/assistant.buildVersion=${version} -X github.com/gratefulagents/assistant/internal/assistant.buildCommit=${GITHUB_SHA} -X github.com/gratefulagents/assistant/internal/assistant.buildDate=${build_date}"
+
           while read -r goos goarch ext; do
             name="assistant-${goos}-${goarch}${ext}"
             echo "building ${name}"
             GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
-              go build -trimpath -ldflags "-s -w" -o "dist/${name}" ./cmd/assistant
+              go build -trimpath -ldflags "${ldflags}" -o "dist/${name}" ./cmd/assistant
           done <<'EOF'
           linux amd64
           linux arm64

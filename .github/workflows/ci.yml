@@ -32,3 +32,17 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+      - name: Build versioned binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          short_sha="${GITHUB_SHA::12}"
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath \
+            -ldflags "-X github.com/gratefulagents/assistant/internal/assistant.buildVersion=ci-${short_sha} -X github.com/gratefulagents/assistant/internal/assistant.buildCommit=${GITHUB_SHA} -X github.com/gratefulagents/assistant/internal/assistant.buildDate=${build_date}" \
+            -o dist/assistant ./cmd/assistant
+
+          ./dist/assistant version

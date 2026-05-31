@@ -47,6 +47,25 @@ func TestRunReturnsUsageErrorForBadProvider(t *testing.T) {
 	}
 }
 
+func TestRunVersionCommand(t *testing.T) {
+	for _, arg := range []string{"version", "--version"} {
+		var stdout, stderr strings.Builder
+		code := Run([]string{arg}, strings.NewReader(""), &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("Run(%q) exit code = %d, want 0", arg, code)
+		}
+		if stderr.Len() != 0 {
+			t.Fatalf("Run(%q) stderr = %q, want empty", arg, stderr.String())
+		}
+		out := stdout.String()
+		for _, want := range []string{"assistant ", "commit:", "built:", "go:"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("Run(%q) stdout missing %q in %q", arg, want, out)
+			}
+		}
+	}
+}
+
 func TestValidateAPIProviderRequiresKey(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.ConfigPath = ""
@@ -363,7 +382,7 @@ func TestDecodeTelegramCallbackQueryUpdates(t *testing.T) {
 }
 
 func TestTelegramCallbackCommandAllowList(t *testing.T) {
-	for _, input := range []string{"assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help"} {
+	for _, input := range []string{"assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help", "assistant:/version"} {
 		if got := telegramCallbackCommand(input); got == "" {
 			t.Fatalf("telegramCallbackCommand(%q) rejected allowed action", input)
 		}
@@ -380,7 +399,7 @@ func TestTelegramControlKeyboardIncludesHistoryButton(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Clear history", "assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help"} {
+	for _, want := range []string{"Clear history", "Version", "assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help", "assistant:/version"} {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("telegram control keyboard missing %q in %s", want, data)
 		}

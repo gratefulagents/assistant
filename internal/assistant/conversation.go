@@ -122,6 +122,8 @@ func handleSlashCommand(text string, session *conversationSession, allowExit boo
 	switch command {
 	case "/start":
 		return slashCommandResult{Handled: true, Reply: slashCommandHelp()}
+	case "/version":
+		return slashCommandResult{Handled: true, Reply: versionText()}
 	case "/exit", "/quit":
 		if allowExit {
 			return slashCommandResult{Handled: true, Exit: true}
@@ -169,6 +171,7 @@ func slashCommandHelp() string {
 		"commands:",
 		"/start - show this help",
 		"/help - show this help",
+		"/version - show assistant version and build information",
 		"/plan - switch this conversation to planning mode",
 		"/chat - switch this conversation to chat mode",
 		"/mode <name> - set a custom mode label",
