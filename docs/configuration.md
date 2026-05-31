@@ -123,9 +123,22 @@ the SDK skill registry.
 Telegram:
 
 ```text
-ASSISTANT_TELEGRAM_BOT_TOKEN
-ASSISTANT_TELEGRAM_POLL_TIMEOUT
+ASSISTANT_TELEGRAM_BOT_TOKEN       required for `assistant telegram`
+ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
 ```
+
+Create the bot with
+[Telegram's BotFather](https://core.telegram.org/bots/features#botfather), copy
+the bot token, then export it before starting the poller:
+
+```sh
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+assistant telegram --provider openai-oauth
+```
+
+Assistant reads process environment variables. It does not automatically load a
+repository `.env` file; use your shell, `direnv`, or another secret manager to
+load `.env` before running the command.
 
 Gmail:
 

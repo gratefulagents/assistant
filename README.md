@@ -62,6 +62,31 @@ Quiet smoke test with no tools or local extensions:
 go run ./cmd/assistant --provider openai-oauth --tools=false --project-state=false "reply with exactly: assistant works"
 ```
 
+Telegram bot mode:
+
+1. Open Telegram and message `@BotFather`.
+2. Send `/newbot`, follow the prompts, and copy the bot token.
+3. Start a chat with the new bot and send it a message once.
+4. Run Assistant with the token in the process environment:
+
+```sh
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+go run ./cmd/assistant telegram --provider openai-oauth
+```
+
+For API-key mode:
+
+```sh
+export OPENAI_API_KEY='sk-...'
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+go run ./cmd/assistant telegram --provider openai-api
+```
+
+Assistant reads environment variables from the process. If you use `.env`,
+copy `.env.example`, fill in `ASSISTANT_TELEGRAM_BOT_TOKEN`, then load it with
+your shell or `direnv` before running the command. Telegram polling uses
+outbound requests only, so no public webhook or inbound port is required.
+
 ## Common Flags
 
 ```text

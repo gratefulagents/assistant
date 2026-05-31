@@ -93,9 +93,50 @@ through `.mcp.json` and are available on the next turn.
 
 Telegram uses outbound long polling. No public webhook is required.
 
+Create and configure a Telegram bot with
+[Telegram's BotFather](https://core.telegram.org/bots/features#botfather):
+
+1. Open Telegram and message `@BotFather`.
+2. Send `/newbot` and follow the prompts for the bot display name and
+   username.
+3. Copy the token BotFather returns. It looks like
+   `123456789:AA...`. Keep this token secret because it can control the bot.
+4. Start a chat with the new bot from the Telegram account that should use
+   Assistant. The bot only receives messages after a user opens the chat and
+   sends it a message.
+
+Set the token in the process environment before starting Assistant:
+
 ```sh
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
 assistant telegram --provider openai-oauth
+```
+
+For API-key provider mode, set the OpenAI key too:
+
+```sh
+export OPENAI_API_KEY='sk-...'
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+assistant telegram --provider openai-api
+```
+
+If you keep local environment values in `.env`, copy `.env.example` and fill in
+the token:
+
+```sh
+cp .env.example .env
+$EDITOR .env
+```
+
+Assistant reads environment variables from the process. It does not load
+`.env` files by itself, so use your shell, `direnv`, or another secret manager
+to load the file before running the command. For a POSIX shell:
+
+```sh
+set -a
+. ./.env
+set +a
+assistant telegram
 ```
 
 Useful flags:
@@ -105,8 +146,22 @@ Useful flags:
 --telegram-poll-timeout    Telegram long-poll timeout in seconds
 ```
 
+Equivalent environment variables:
+
+```text
+ASSISTANT_TELEGRAM_BOT_TOKEN       required unless --telegram-bot-token is set
+ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
+```
+
 The last processed Telegram update offset is stored in the assistant state
-directory.
+directory. By default that is
+`~/.gratefulagents/assistant/state/telegram_offset.json`; override the state
+directory with `--state-dir` or `ASSISTANT_STATE_DIR`.
+
+For unattended Telegram use, review the tool and approval settings. Channel
+modes cannot answer interactive approval prompts, so either run with narrow or
+read-only tool access, or set `--approval=false` only for a workspace and tool
+set you trust.
 
 ## Gmail Polling
 
