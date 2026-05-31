@@ -394,14 +394,14 @@ func TestTelegramCallbackCommandAllowList(t *testing.T) {
 	}
 }
 
-func TestTelegramControlKeyboardIncludesHistoryButton(t *testing.T) {
-	data, err := json.Marshal(telegramControlKeyboard())
+func TestTelegramBotCommandsIncludeChatControls(t *testing.T) {
+	data, err := json.Marshal(telegramBotCommands())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Clear history", "Version", "assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help", "assistant:/version"} {
+	for _, want := range []string{"clear", "version", "plan", "chat", "help"} {
 		if !strings.Contains(string(data), want) {
-			t.Fatalf("telegram control keyboard missing %q in %s", want, data)
+			t.Fatalf("telegram bot commands missing %q in %s", want, data)
 		}
 	}
 }

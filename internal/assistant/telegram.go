@@ -75,22 +75,6 @@ func telegramBotCommands() []telegramBotCommand {
 	}
 }
 
-func telegramControlKeyboard() map[string]any {
-	return map[string]any{
-		"inline_keyboard": [][]map[string]string{
-			{
-				{"text": "Clear history", "callback_data": "assistant:/clear"},
-				{"text": "Plan", "callback_data": "assistant:/plan"},
-				{"text": "Chat", "callback_data": "assistant:/chat"},
-			},
-			{
-				{"text": "Help", "callback_data": "assistant:/help"},
-				{"text": "Version", "callback_data": "assistant:/version"},
-			},
-		},
-	}
-}
-
 func telegramConfigureBot(ctx context.Context, token string) error {
 	if strings.TrimSpace(token) == "" {
 		return nil
@@ -305,27 +289,19 @@ func postTelegramMessage(ctx context.Context, token string, chatID int64, text s
 		return nil
 	}
 	url := telegramAPIBase + token + "/sendMessage"
-	chunks := telegramMessageChunks(text)
-	for i, chunk := range chunks {
-		var replyMarkup any
-		if i == len(chunks)-1 {
-			replyMarkup = telegramControlKeyboard()
-		}
-		if err := postTelegramMessageChunk(ctx, url, chatID, chunk, replyMarkup); err != nil {
+	for _, chunk := range telegramMessageChunks(text) {
+		if err := postTelegramMessageChunk(ctx, url, chatID, chunk); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64, text string, replyMarkup any) error {
+func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64, text string) error {
 	richPayload := map[string]any{
 		"chat_id":    chatID,
 		"text":       telegramHTMLMessage(text),
 		"parse_mode": "HTML",
-	}
-	if replyMarkup != nil {
-		richPayload["reply_markup"] = replyMarkup
 	}
 	if err := postJSON(ctx, endpoint, "", richPayload); err == nil {
 		return nil
@@ -337,9 +313,6 @@ func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64
 			return err
 		}
 		fallbackPayload := map[string]any{"chat_id": chatID, "text": plain}
-		if replyMarkup != nil {
-			fallbackPayload["reply_markup"] = replyMarkup
-		}
 		if fallbackErr := postJSON(ctx, endpoint, "", fallbackPayload); fallbackErr != nil {
 			return fmt.Errorf("telegram rich message failed: %w; plain fallback failed: %v", err, fallbackErr)
 		}
