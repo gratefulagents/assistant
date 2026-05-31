@@ -193,7 +193,9 @@ structured events to stdout, standard logs, and
 Interactive and channel conversations retain history for the lifetime of the
 running process. Telegram keys history by chat, Gmail by thread, and the local
 gateway by `thread_id` with `user_id` as a fallback. Slash commands are handled
-by the host: `/plan`, `/chat`, `/mode <name>`, `/clear`, `/stop`, and `/help`.
+by the host: `/start`, `/help`, `/plan`, `/chat`, `/mode <name>`, `/clear`,
+and `/stop`. Telegram also exposes the common commands through its bot menu and
+adds inline action buttons to assistant replies.
 
 ## Security
 

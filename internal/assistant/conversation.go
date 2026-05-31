@@ -114,9 +114,14 @@ func handleSlashCommand(text string, session *conversationSession, allowExit boo
 	}
 	command, arg, _ := strings.Cut(trimmed, " ")
 	command = strings.ToLower(strings.TrimSpace(command))
+	if base, _, ok := strings.Cut(command, "@"); ok {
+		command = base
+	}
 	arg = strings.TrimSpace(arg)
 
 	switch command {
+	case "/start":
+		return slashCommandResult{Handled: true, Reply: slashCommandHelp()}
 	case "/exit", "/quit":
 		if allowExit {
 			return slashCommandResult{Handled: true, Exit: true}
@@ -162,6 +167,8 @@ func setSessionModeCommand(session *conversationSession, mode string) slashComma
 func slashCommandHelp() string {
 	return strings.Join([]string{
 		"commands:",
+		"/start - show this help",
+		"/help - show this help",
 		"/plan - switch this conversation to planning mode",
 		"/chat - switch this conversation to chat mode",
 		"/mode <name> - set a custom mode label",

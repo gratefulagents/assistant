@@ -235,13 +235,21 @@ preformatted code, and block quotes. Telegram messages do not support native
 table markup, so tabular answers are rendered as aligned text inside
 preformatted blocks.
 
+When the Telegram poller starts, Assistant registers a command menu for common
+actions: `/start`, `/help`, `/clear`, `/plan`, `/chat`, and `/stop`. Replies
+also include inline buttons for clearing chat history, switching between plan
+and chat mode, and showing help. Telegram supports bot command menus and
+message-attached inline keyboards; it does not provide bots with a custom fixed
+toolbar at the top of the chat.
+
 The last processed Telegram update offset is stored in the assistant state
 directory. By default that is
 `~/.gratefulagents/assistant/state/telegram_offset.json`; override the state
 directory with `--state-dir` or `ASSISTANT_STATE_DIR`.
 
 Telegram conversation history is kept per chat ID for the lifetime of the
-poller process. Send `/clear` in a chat to clear only that chat's history.
+poller process. Send `/clear` in a chat, select it from the bot command menu,
+or tap the `Clear history` inline button to clear only that chat's history.
 
 For unattended Telegram use, review the tool and approval settings. Channel
 modes cannot answer interactive approval prompts, so either run with narrow or

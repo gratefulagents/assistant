@@ -76,6 +76,21 @@ func TestSlashCommandsUpdateSessionWithoutModelRun(t *testing.T) {
 	}
 }
 
+func TestSlashCommandsSupportTelegramMentionSuffix(t *testing.T) {
+	session := newConversationSession()
+	got := handleSlashCommand("/clear@TestAssistantBot", session, false)
+	if !got.Handled || got.Reply != "history cleared" {
+		t.Fatalf("telegram mention command = %#v, want clear acknowledgement", got)
+	}
+}
+
+func TestSlashStartShowsHelp(t *testing.T) {
+	got := handleSlashCommand("/start", newConversationSession(), false)
+	if !got.Handled || !strings.Contains(got.Reply, "/clear - clear this conversation's history") {
+		t.Fatalf("/start result = %#v, want help", got)
+	}
+}
+
 func TestSlashExitOnlyAllowedInREPL(t *testing.T) {
 	if got := handleSlashCommand("/exit", newConversationSession(), false); !got.Handled || got.Exit {
 		t.Fatalf("non-REPL /exit result = %#v, want handled non-exit", got)

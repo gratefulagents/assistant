@@ -335,6 +335,58 @@ func TestDecodeTelegramUpdates(t *testing.T) {
 	}
 }
 
+func TestDecodeTelegramCallbackQueryUpdates(t *testing.T) {
+	resp, err := decodeTelegramUpdates([]byte(`{
+		"ok": true,
+		"result": [
+			{
+				"update_id": 42,
+				"callback_query": {
+					"id": "callback-1",
+					"data": "assistant:/clear",
+					"from": {"id": 7, "username": "hunter"},
+					"message": {
+						"text": "history cleared",
+						"chat": {"id": 9}
+					}
+				}
+			}
+		]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	update := resp.Result[0]
+	if update.CallbackQuery.ID != "callback-1" || update.CallbackQuery.Data != "assistant:/clear" || update.CallbackQuery.Message.Chat.ID != 9 {
+		t.Fatalf("bad telegram callback decode: %#v", update)
+	}
+}
+
+func TestTelegramCallbackCommandAllowList(t *testing.T) {
+	for _, input := range []string{"assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help"} {
+		if got := telegramCallbackCommand(input); got == "" {
+			t.Fatalf("telegramCallbackCommand(%q) rejected allowed action", input)
+		}
+	}
+	for _, input := range []string{"", "/clear", "assistant:/mode admin", "other:/clear"} {
+		if got := telegramCallbackCommand(input); got != "" {
+			t.Fatalf("telegramCallbackCommand(%q) = %q, want empty", input, got)
+		}
+	}
+}
+
+func TestTelegramControlKeyboardIncludesHistoryButton(t *testing.T) {
+	data, err := json.Marshal(telegramControlKeyboard())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Clear history", "assistant:/clear", "assistant:/plan", "assistant:/chat", "assistant:/help"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("telegram control keyboard missing %q in %s", want, data)
+		}
+	}
+}
+
 func TestTelegramHTMLMessagePreservesSupportedFormatting(t *testing.T) {
 	input := strings.Join([]string{
 		`<b>Weather</b>`,

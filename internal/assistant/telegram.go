@@ -27,23 +27,75 @@ type telegramOffsetState struct {
 }
 
 type telegramUpdate struct {
-	UpdateID int64 `json:"update_id"`
-	Message  struct {
-		Text string `json:"text"`
-		Chat struct {
-			ID int64 `json:"id"`
-		} `json:"chat"`
-		From struct {
-			ID       int64  `json:"id"`
-			Username string `json:"username"`
-		} `json:"from"`
-	} `json:"message"`
+	UpdateID      int64                 `json:"update_id"`
+	Message       telegramMessage       `json:"message"`
+	CallbackQuery telegramCallbackQuery `json:"callback_query"`
+}
+
+type telegramMessage struct {
+	Text string `json:"text"`
+	Chat struct {
+		ID int64 `json:"id"`
+	} `json:"chat"`
+	From telegramUser `json:"from"`
+}
+
+type telegramCallbackQuery struct {
+	ID      string          `json:"id"`
+	Data    string          `json:"data"`
+	From    telegramUser    `json:"from"`
+	Message telegramMessage `json:"message"`
+}
+
+type telegramUser struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
 }
 
 type telegramUpdatesResponse struct {
 	OK          bool             `json:"ok"`
 	Description string           `json:"description"`
 	Result      []telegramUpdate `json:"result"`
+}
+
+type telegramBotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+func telegramBotCommands() []telegramBotCommand {
+	return []telegramBotCommand{
+		{Command: "start", Description: "Show assistant commands"},
+		{Command: "help", Description: "Show assistant commands"},
+		{Command: "clear", Description: "Clear this chat's assistant history"},
+		{Command: "plan", Description: "Switch this chat to planning mode"},
+		{Command: "chat", Description: "Switch this chat to chat mode"},
+		{Command: "stop", Description: "Stop an active run when supported"},
+	}
+}
+
+func telegramControlKeyboard() map[string]any {
+	return map[string]any{
+		"inline_keyboard": [][]map[string]string{
+			{
+				{"text": "Clear history", "callback_data": "assistant:/clear"},
+				{"text": "Plan", "callback_data": "assistant:/plan"},
+				{"text": "Chat", "callback_data": "assistant:/chat"},
+			},
+			{
+				{"text": "Help", "callback_data": "assistant:/help"},
+			},
+		},
+	}
+}
+
+func telegramConfigureBot(ctx context.Context, token string) error {
+	if strings.TrimSpace(token) == "" {
+		return nil
+	}
+	return postJSON(ctx, telegramAPIBase+token+"/setMyCommands", "", map[string]any{
+		"commands": telegramBotCommands(),
+	})
 }
 
 func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
@@ -55,6 +107,9 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 	offset, err := loadTelegramOffset(cfg)
 	if err != nil {
 		return err
+	}
+	if err := telegramConfigureBot(ctx, token); err != nil {
+		fmt.Fprintf(stderr, "telegram menu warning: %v\n", err)
 	}
 	fmt.Fprintf(stderr, "assistant telegram polling; no inbound port required\n")
 	for {
@@ -95,7 +150,7 @@ func fetchTelegramUpdates(ctx context.Context, token string, offset int64, timeo
 	payload := map[string]any{
 		"offset":          offset,
 		"timeout":         timeoutSeconds,
-		"allowed_updates": []string{"message"},
+		"allowed_updates": []string{"message", "callback_query"},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -137,6 +192,9 @@ func decodeTelegramUpdates(data []byte) (telegramUpdatesResponse, error) {
 }
 
 func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, update telegramUpdate, conversations *conversationStore) error {
+	if strings.TrimSpace(update.CallbackQuery.ID) != "" {
+		return handleTelegramCallbackQuery(ctx, cfg, stdout, stderr, token, update.CallbackQuery, conversations)
+	}
 	text := strings.TrimSpace(update.Message.Text)
 	if text == "" {
 		return nil
@@ -161,24 +219,108 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 	return postTelegramMessage(ctx, token, chatID, reply)
 }
 
+func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, query telegramCallbackQuery, conversations *conversationStore) error {
+	command := telegramCallbackCommand(query.Data)
+	if command == "" {
+		return answerTelegramCallbackQuery(ctx, token, query.ID, "Unknown action")
+	}
+	chatID := query.Message.Chat.ID
+	if chatID == 0 {
+		return answerTelegramCallbackQuery(ctx, token, query.ID, "Action unavailable in this chat")
+	}
+	userID := telegramUserID(query.From)
+	reply, err := replyToInbound(ctx, cfg, inboundMessage{
+		Channel: "telegram",
+		UserID:  userID,
+		Thread:  fmt.Sprintf("%d", chatID),
+		Text:    command,
+	}, stdout, stderr, conversations)
+	if err != nil {
+		_ = answerTelegramCallbackQuery(ctx, token, query.ID, "Action failed")
+		return err
+	}
+	if err := answerTelegramCallbackQuery(ctx, token, query.ID, telegramCallbackNotice(command, reply)); err != nil {
+		return err
+	}
+	return postTelegramMessage(ctx, token, chatID, reply)
+}
+
+func telegramUserID(user telegramUser) string {
+	if strings.TrimSpace(user.Username) != "" {
+		return user.Username
+	}
+	if user.ID != 0 {
+		return fmt.Sprintf("%d", user.ID)
+	}
+	return ""
+}
+
+func telegramCallbackCommand(data string) string {
+	const prefix = "assistant:"
+	data = strings.TrimSpace(data)
+	if !strings.HasPrefix(data, prefix) {
+		return ""
+	}
+	switch command := strings.TrimSpace(strings.TrimPrefix(data, prefix)); command {
+	case "/clear", "/plan", "/chat", "/help":
+		return command
+	default:
+		return ""
+	}
+}
+
+func telegramCallbackNotice(command, reply string) string {
+	if command == "/help" {
+		return "Help sent"
+	}
+	reply = firstLine(strings.TrimSpace(reply))
+	if reply == "" {
+		return "Done"
+	}
+	runes := []rune(reply)
+	if len(runes) > 180 {
+		reply = string(runes[:180])
+	}
+	return reply
+}
+
+func answerTelegramCallbackQuery(ctx context.Context, token, callbackID, text string) error {
+	if strings.TrimSpace(token) == "" || strings.TrimSpace(callbackID) == "" {
+		return nil
+	}
+	payload := map[string]any{"callback_query_id": callbackID}
+	if strings.TrimSpace(text) != "" {
+		payload["text"] = text
+	}
+	return postJSON(ctx, telegramAPIBase+token+"/answerCallbackQuery", "", payload)
+}
+
 func postTelegramMessage(ctx context.Context, token string, chatID int64, text string) error {
 	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(text) == "" {
 		return nil
 	}
 	url := telegramAPIBase + token + "/sendMessage"
-	for _, chunk := range telegramMessageChunks(text) {
-		if err := postTelegramMessageChunk(ctx, url, chatID, chunk); err != nil {
+	chunks := telegramMessageChunks(text)
+	for i, chunk := range chunks {
+		var replyMarkup any
+		if i == len(chunks)-1 {
+			replyMarkup = telegramControlKeyboard()
+		}
+		if err := postTelegramMessageChunk(ctx, url, chatID, chunk, replyMarkup); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64, text string) error {
+func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64, text string, replyMarkup any) error {
 	richPayload := map[string]any{
 		"chat_id":    chatID,
 		"text":       telegramHTMLMessage(text),
 		"parse_mode": "HTML",
+	}
+	if replyMarkup != nil {
+		richPayload["reply_markup"] = replyMarkup
 	}
 	if err := postJSON(ctx, endpoint, "", richPayload); err == nil {
 		return nil
@@ -189,7 +331,11 @@ func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64
 		if plain == "" {
 			return err
 		}
-		if fallbackErr := postJSON(ctx, endpoint, "", map[string]any{"chat_id": chatID, "text": plain}); fallbackErr != nil {
+		fallbackPayload := map[string]any{"chat_id": chatID, "text": plain}
+		if replyMarkup != nil {
+			fallbackPayload["reply_markup"] = replyMarkup
+		}
+		if fallbackErr := postJSON(ctx, endpoint, "", fallbackPayload); fallbackErr != nil {
 			return fmt.Errorf("telegram rich message failed: %w; plain fallback failed: %v", err, fallbackErr)
 		}
 	}
