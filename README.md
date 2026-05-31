@@ -197,42 +197,41 @@ by the host: `/plan`, `/chat`, `/mode <name>`, `/clear`, `/stop`, and `/help`.
 
 ## Security
 
-Assistant is a local personal-agent host, so security is handled in layers:
+Assistant runs tools on your machine, so the defaults are conservative:
 
-- Conservative defaults: approvals, guardrails, compaction, and SDK tools are
-  on; MCP, skill installation, private-network web access, audit logging, and
-  Gmail reply sending are opt-in.
-- Permission modes: `--permission read-only` restricts the SDK tool surface to
-  read-only tools; `workspace-write` allows workspace edits but still routes
-  through approvals and guardrails by default.
-- Approval gates: with `--approval=true`, non-read-only tools pause for human
-  confirmation in interactive mode before execution.
-- Guardrails: built-in SDK guardrails block obvious destructive shell commands
-  and detect likely secrets in tool inputs and outputs.
-- Tool output isolation: tool results are tagged as untrusted before they are
-  fed back into the next model turn, reducing prompt-injection risk from web,
-  file, shell, or MCP output.
-- Subprocess sandboxing: shell and MCP stdio servers run through the SDK
-  command executor. On Linux, read-only and Kubernetes runs use Bubblewrap with
-  a cleared environment, namespace isolation, `/tmp` home/cache directories,
-  read-only or writable workspace mounts according to permission mode, output
-  caps, timeouts, and process-group cleanup. Local non-read-only development
-  may fall back to a sanitized process when Bubblewrap is unavailable.
-- Safe subprocess environment: commands do not inherit the parent environment;
-  the SDK builds a deterministic env with disabled git prompts and scratch
-  cache directories.
-- MCP hardening: MCP is disabled unless `--mcp` is set, only stdio transport is
-  supported, server descriptions are flattened and marked as untrusted, server
-  names are qualified into tool names, credential-like env vars are stripped
-  unless explicitly listed in `allowEnv`, and MCP read-only hints are trusted
-  only when `trustReadOnlyHint` is configured.
-- Network controls: private and loopback URL access for web tools is disabled
-  unless `--private-network` is set. Telegram and Gmail poll outbound only; the
-  local gateway requires a bearer token before accepting `/v1/messages`.
-- Audit trail: `--audit` records structured run, model, tool, approval,
-  compaction, and error events to stdout/logs/JSONL with common bearer tokens,
-  API keys, GitHub tokens, Telegram bot tokens, and secret-like JSON fields
-  redacted.
+- Approvals, guardrails, compaction, and SDK tools are on by default.
+- MCP servers, skill installation, private-network web access, audit logging,
+  and Gmail reply sending are opt-in.
+- `--permission read-only` restricts the tool surface to read-only tools.
+  `workspace-write` allows workspace edits, but still uses approvals and
+  guardrails by default.
+- With `--approval=true`, non-read-only tools pause for human confirmation in
+  interactive mode before execution.
+
+Tool runs are isolated where practical:
+
+- Built-in guardrails block obvious destructive shell commands and detect
+  likely secrets in tool inputs and outputs.
+- Tool output is marked as untrusted before it is fed back into the next model
+  turn, reducing prompt-injection risk from web, file, shell, and MCP output.
+- Shell commands and MCP stdio servers run through the SDK command executor.
+  Subprocesses receive a sanitized environment, scratch cache directories,
+  disabled git prompts, output caps, timeouts, and process-group cleanup. On
+  Linux, read-only runs use Bubblewrap when available.
+
+Integrations are scoped explicitly:
+
+- MCP is disabled unless `--mcp` is set. Assistant supports stdio MCP servers,
+  qualifies server names into tool names, treats server descriptions as
+  untrusted, and strips credential-like environment variables unless they are
+  explicitly listed in `allowEnv`.
+- Private and loopback URL access for web tools is disabled unless
+  `--private-network` is set.
+- Telegram and Gmail poll outbound only. The local gateway requires a bearer
+  token before accepting `/v1/messages`.
+- Audit logging is opt-in with `--audit`. Audit events redact common bearer
+  tokens, API keys, GitHub tokens, Telegram bot tokens, and secret-like JSON
+  fields.
 
 For operational guidance and caveats, see [Security Model](docs/security.md).
 
