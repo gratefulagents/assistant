@@ -23,12 +23,39 @@ Kubernetes, or local-model runtime dependency.
 
 Requirements:
 
-- Go 1.26.2 or newer.
 - OpenAI OAuth credentials at `~/.codex/auth.json`, or an OpenAI API key.
   To create the OAuth file, run `npx @openai/codex login` and complete the
   browser sign-in flow.
+- Go 1.26.2 or newer, only if you are building from source.
 
-Build from a clone:
+Download a prebuilt binary from
+[GitHub Releases](https://github.com/gratefulagents/assistant/releases):
+
+1. Open the latest release.
+2. Download the binary for your OS and CPU, such as
+   `assistant-darwin-arm64`, `assistant-linux-amd64`, or
+   `assistant-windows-amd64.exe`.
+3. Make it executable and place it somewhere on your `PATH`.
+
+For macOS Apple Silicon:
+
+```sh
+curl -L -o assistant \
+  https://github.com/gratefulagents/assistant/releases/latest/download/assistant-darwin-arm64
+chmod +x assistant
+sudo mv assistant /usr/local/bin/assistant
+```
+
+For Linux x86_64:
+
+```sh
+curl -L -o assistant \
+  https://github.com/gratefulagents/assistant/releases/latest/download/assistant-linux-amd64
+chmod +x assistant
+sudo mv assistant /usr/local/bin/assistant
+```
+
+Build from a clone for development:
 
 ```sh
 go build ./cmd/assistant
