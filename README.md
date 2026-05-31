@@ -1,9 +1,10 @@
 # Assistant
 
 `github.com/gratefulagents/assistant` is a lightweight personal AI assistant
-host built in Go on top of `github.com/gratefulagents/sdk`. It provides a
-single `assistant` command for interactive chat, one-shot prompts, scheduled
-jobs, Telegram and Gmail polling, and a local JSON gateway.
+host built in Go on top of
+[`github.com/gratefulagents/sdk`](https://github.com/gratefulagents/sdk). It
+provides a single `assistant` command for interactive chat, one-shot prompts,
+scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 
 ## Features
 
