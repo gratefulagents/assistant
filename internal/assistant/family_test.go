@@ -71,10 +71,10 @@ func TestFamilyConfigUsesBuildVersionForDefaultImage(t *testing.T) {
 	}
 	cfg.applyDefaults()
 
-	if got, want := cfg.Version, "v1.2.3"; got != want {
+	if got, want := cfg.Version, "1.2.3"; got != want {
 		t.Errorf("version = %q, want %q", got, want)
 	}
-	if got, want := cfg.Image, "ghcr.io/gratefulagents/assistant:v1.2.3"; got != want {
+	if got, want := cfg.Image, "ghcr.io/gratefulagents/assistant:1.2.3"; got != want {
 		t.Errorf("image = %q, want %q", got, want)
 	}
 }
@@ -91,8 +91,25 @@ func TestFamilyConfigVersionOverridesImageTag(t *testing.T) {
 	}
 	cfg.applyDefaults()
 
-	if got, want := cfg.Image, "ghcr.io/example/assistant:v2.0.0"; got != want {
+	if got, want := cfg.Version, "2.0.0"; got != want {
+		t.Errorf("version = %q, want %q", got, want)
+	}
+	if got, want := cfg.Image, "ghcr.io/example/assistant:2.0.0"; got != want {
 		t.Errorf("image = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeFamilyImageVersionPreservesNonSemverTags(t *testing.T) {
+	tests := map[string]string{
+		"latest": "latest",
+		"vnext":  "vnext",
+		"V2.0.0": "2.0.0",
+		"v0.7.2": "0.7.2",
+	}
+	for in, want := range tests {
+		if got := normalizeFamilyImageVersion(in); got != want {
+			t.Errorf("normalizeFamilyImageVersion(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

@@ -461,12 +461,12 @@ func defaultFamilyVersion() string {
 	case "", "dev", "(devel)":
 		return defaultFamilyImageVersion
 	default:
-		return version
+		return normalizeFamilyImageVersion(version)
 	}
 }
 
 func effectiveFamilyVersion(image, version string) string {
-	version = strings.TrimSpace(version)
+	version = normalizeFamilyImageVersion(version)
 	if version != "" {
 		return version
 	}
@@ -479,7 +479,7 @@ func effectiveFamilyVersion(image, version string) string {
 
 func familyImageFromConfig(image, version string) string {
 	image = strings.TrimSpace(image)
-	version = strings.TrimSpace(version)
+	version = normalizeFamilyImageVersion(version)
 	if image == "" {
 		image = defaultFamilyImageRepository
 	}
@@ -493,6 +493,14 @@ func familyImageFromConfig(image, version string) string {
 		return image + ":" + defaultFamilyVersion()
 	}
 	return image
+}
+
+func normalizeFamilyImageVersion(version string) string {
+	version = strings.TrimSpace(version)
+	if len(version) > 1 && (version[0] == 'v' || version[0] == 'V') && version[1] >= '0' && version[1] <= '9' {
+		return version[1:]
+	}
+	return version
 }
 
 func hasImageTagOrDigest(image string) bool {

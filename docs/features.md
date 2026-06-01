@@ -408,7 +408,8 @@ Preview the Docker commands without running them using `--dry-run`. Override the
 image repository with `--image`, the image tag with `--version`, and the mounted
 Codex auth path with `--codex-auth`. By default, generated family configs use
 the running assistant release version as the image tag; development builds fall
-back to `latest`.
+back to `latest`. Release image tags are plain semver, such as `0.7.2`; a
+leading `v` is stripped when resolving the Docker image tag.
 
 The interactive flow asks how many family members there are, then for each
 member a name, a Telegram bot token, and a comma-separated allow list; it repeats
