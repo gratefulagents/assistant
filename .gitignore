@@ -5,6 +5,8 @@
 /bin/
 /coverage.out
 /dist/
+/.generated-go-semantic-release-changelog.md
+/.semrel/
 /go.work
 /go.work.sum
 *.test
