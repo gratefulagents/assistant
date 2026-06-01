@@ -42,6 +42,58 @@ checksum:
   name_template: SHA256SUMS
   algorithm: sha256
 
+dockers:
+  - image_templates:
+      - "ghcr.io/gratefulagents/assistant:{{ .Tag }}-amd64"
+      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-amd64"
+      - "ghcr.io/gratefulagents/assistant:latest-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    ids:
+      - assistant
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.name={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/gratefulagents/assistant"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+  - image_templates:
+      - "ghcr.io/gratefulagents/assistant:{{ .Tag }}-arm64"
+      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-arm64"
+      - "ghcr.io/gratefulagents/assistant:latest-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    ids:
+      - assistant
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--pull"
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.name={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/gratefulagents/assistant"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/gratefulagents/assistant:{{ .Tag }}"
+    image_templates:
+      - "ghcr.io/gratefulagents/assistant:{{ .Tag }}-amd64"
+      - "ghcr.io/gratefulagents/assistant:{{ .Tag }}-arm64"
+  - name_template: "ghcr.io/gratefulagents/assistant:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-amd64"
+      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/gratefulagents/assistant:latest"
+    image_templates:
+      - "ghcr.io/gratefulagents/assistant:latest-amd64"
+      - "ghcr.io/gratefulagents/assistant:latest-arm64"
+
 changelog:
   use: github
   sort: asc
