@@ -16,8 +16,8 @@ github.com/google/jsonschema-go v0.4.2 h1:tmrUohrwoLZZS/P3x7ex0WAVknEkBZM46iALbc
 github.com/google/jsonschema-go v0.4.2/go.mod h1:r5quNTdLOYEz95Ru18zA0ydNbBuYoo9tgaYcxEYhJVE=
 github.com/google/uuid v1.6.0 h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
 github.com/google/uuid v1.6.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=
-github.com/gratefulagents/sdk v0.0.1 h1:m6lkif5nLU1fIr0c09OCBOowbd67jwmv9iXXZS80x10=
-github.com/gratefulagents/sdk v0.0.1/go.mod h1:Pa5b1Y3HfsFkr5Lc3dRWg8itRtKwfrLUoGdWqCojsKs=
+github.com/gratefulagents/sdk v0.0.2 h1:Kmeh3a1me3Ekk9qEeU8a1MQEsiLV44WGopiwYpEIyx4=
+github.com/gratefulagents/sdk v0.0.2/go.mod h1:Pa5b1Y3HfsFkr5Lc3dRWg8itRtKwfrLUoGdWqCojsKs=
 github.com/invopop/jsonschema v0.13.0 h1:KvpoAJWEjR3uD9Kbm2HWJmqsEaHt8lBUpd0qHcIi21E=
 github.com/invopop/jsonschema v0.13.0/go.mod h1:ffZ5Km5SWWRAIN6wbDXItl95euhFz2uON45H2qjYt+0=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=

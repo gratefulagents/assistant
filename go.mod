@@ -3,7 +3,7 @@ module github.com/gratefulagents/assistant
 go 1.26.2
 
 require (
-	github.com/gratefulagents/sdk v0.0.1
+	github.com/gratefulagents/sdk v0.0.2
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/net v0.53.0
 )
