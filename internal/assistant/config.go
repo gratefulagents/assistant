@@ -75,7 +75,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.SetOutput(io.Discard)
 
 	fs.StringVar(&cfg.ConfigPath, "config", cfg.ConfigPath, "assistant extension config JSON")
-	fs.StringVar(&cfg.Provider, "provider", cfg.Provider, "provider: openai-oauth or openai-api")
+	fs.StringVar(&cfg.Provider, "provider", cfg.Provider, "provider: openai-oauth, openai-api, or openrouter")
 	fs.StringVar(&cfg.Model, "model", cfg.Model, "model name")
 	fs.StringVar(&cfg.BaseURL, "base-url", cfg.BaseURL, "OpenAI base URL override")
 	fs.StringVar(&cfg.APIMode, "api-mode", cfg.APIMode, "OpenAI API mode override")
@@ -241,6 +241,19 @@ func (c *appConfig) validate() error {
 		if strings.TrimSpace(c.APIMode) == "" {
 			c.APIMode = "responses"
 		}
+	case providerOpenRouter:
+		if strings.TrimSpace(c.APIKey) == "" {
+			c.APIKey = firstNonEmpty(os.Getenv("ASSISTANT_OPENROUTER_API_KEY"), os.Getenv("OPENROUTER_API_KEY"))
+		}
+		if strings.TrimSpace(c.APIKey) == "" {
+			return errors.New("--provider openrouter requires --api-key or OPENROUTER_API_KEY")
+		}
+		if strings.TrimSpace(c.BaseURL) == "" {
+			c.BaseURL = defaultOpenRouterBaseURL
+		}
+		if strings.TrimSpace(c.APIMode) == "" {
+			c.APIMode = defaultOpenRouterAPIMode
+		}
 	case providerOpenAIOAuth:
 		if strings.TrimSpace(c.OpenAIOAuthPath) == "" {
 			return errors.New("--provider openai-oauth requires --openai-oauth-path")
@@ -301,6 +314,7 @@ func usage() string {
 providers:
   --provider openai-oauth   use OpenAI OAuth credentials
   --provider openai-api     use OPENAI_API_KEY or --api-key
+  --provider openrouter     use OPENROUTER_API_KEY or --api-key
 
 extension config:
   --config PATH             assistant JSON config; defaults to ~/.gratefulagents/assistant/config.json
@@ -320,5 +334,6 @@ examples:
   assistant poll --provider openai-oauth
   assistant serve --provider openai-oauth --addr :8080
   assistant --provider openai-api "what changed in this repo?"
+  OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
 `)
 }

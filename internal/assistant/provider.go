@@ -13,6 +13,13 @@ import (
 const (
 	providerOpenAIOAuth = "openai-oauth"
 	providerOpenAIAPI   = "openai-api"
+	providerOpenRouter  = "openrouter"
+)
+
+const (
+	defaultOpenRouterBaseURL = "https://openrouter.ai/api/v1"
+	defaultOpenRouterAPIMode = "chat-completions"
+	defaultOpenRouterModel   = "openai/gpt-4o-mini"
 )
 
 func normalizeProvider(provider string) string {
@@ -21,8 +28,21 @@ func normalizeProvider(provider string) string {
 		return providerOpenAIOAuth
 	case providerOpenAIAPI, "api":
 		return providerOpenAIAPI
+	case providerOpenRouter, "open-router":
+		return providerOpenRouter
 	default:
 		return ""
+	}
+}
+
+// sdkProviderName maps an assistant provider to the SDK provider identifier
+// consumed by the runtime/provider factory.
+func sdkProviderName(provider string) string {
+	switch provider {
+	case providerOpenRouter:
+		return "openrouter"
+	default:
+		return "openai"
 	}
 }
 
@@ -32,6 +52,8 @@ func defaultModel(provider string) string {
 		return sdkopenai.DefaultChatMiniModel
 	case providerOpenAIAPI:
 		return sdkopenai.DefaultChatModel
+	case providerOpenRouter:
+		return defaultOpenRouterModel
 	default:
 		return sdkopenai.DefaultChatModel
 	}

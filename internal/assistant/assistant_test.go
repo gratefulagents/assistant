@@ -24,6 +24,8 @@ func TestNormalizeProvider(t *testing.T) {
 		"oauth":        providerOpenAIOAuth,
 		"openai-api":   providerOpenAIAPI,
 		"api":          providerOpenAIAPI,
+		"openrouter":   providerOpenRouter,
+		"open-router":  providerOpenRouter,
 		"local":        "",
 	}
 	for in, want := range tests {
@@ -86,6 +88,58 @@ func TestValidateAPIProviderRequiresKey(t *testing.T) {
 	}
 	if cfg.Model != sdkopenai.DefaultChatModel {
 		t.Fatalf("Model = %q, want %q", cfg.Model, sdkopenai.DefaultChatModel)
+	}
+}
+
+func TestValidateOpenRouterProviderDefaults(t *testing.T) {
+	t.Setenv("ASSISTANT_OPENROUTER_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.Provider = providerOpenRouter
+	cfg.APIKey = ""
+	cfg.Model = ""
+	if err := cfg.validate(); err == nil {
+		t.Fatal("validate succeeded without OpenRouter API key")
+	}
+	cfg.APIKey = "sk-or-test"
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != defaultOpenRouterBaseURL {
+		t.Fatalf("BaseURL = %q, want OpenRouter default", cfg.BaseURL)
+	}
+	if cfg.APIMode != defaultOpenRouterAPIMode {
+		t.Fatalf("APIMode = %q, want %q", cfg.APIMode, defaultOpenRouterAPIMode)
+	}
+	if cfg.Model != defaultOpenRouterModel {
+		t.Fatalf("Model = %q, want %q", cfg.Model, defaultOpenRouterModel)
+	}
+
+	rt := runtimeConfig(cfg, extensionBundle{}, nil)
+	if rt.Provider != "openrouter" {
+		t.Fatalf("runtime Provider = %q, want openrouter", rt.Provider)
+	}
+	if rt.AuthMode != string(sdkopenai.AuthModeAPIKey) {
+		t.Fatalf("runtime AuthMode = %q, want api-key", rt.AuthMode)
+	}
+	if rt.APIKey != "sk-or-test" {
+		t.Fatalf("runtime APIKey = %q, want sk-or-test", rt.APIKey)
+	}
+}
+
+func TestValidateOpenRouterProviderReadsEnvKey(t *testing.T) {
+	t.Setenv("ASSISTANT_OPENROUTER_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-env")
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.Provider = providerOpenRouter
+	cfg.APIKey = ""
+	if err := cfg.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.APIKey != "sk-or-env" {
+		t.Fatalf("APIKey = %q, want sk-or-env from OPENROUTER_API_KEY", cfg.APIKey)
 	}
 }
 

@@ -5,16 +5,20 @@ JSON config file. Flags have the final say for values parsed by the CLI.
 
 ## Providers
 
-Assistant supports two OpenAI modes:
+Assistant supports the following provider modes:
 
 - `openai-oauth`: reads OAuth credentials from `~/.codex/auth.json` by default.
 - `openai-api`: reads an API key from `OPENAI_API_KEY` by default.
+- `openrouter`: reads an API key from `OPENROUTER_API_KEY` by default and talks
+  to the OpenRouter OpenAI-compatible API. Use fully-qualified model slugs such
+  as `openai/gpt-4o-mini` or `anthropic/claude-3.5-sonnet`.
 
 Examples:
 
 ```sh
 assistant --provider openai-oauth
 OPENAI_API_KEY=sk-... assistant --provider openai-api
+OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
 ```
 
 Provider-specific environment variables:
@@ -31,7 +35,13 @@ ASSISTANT_OPENAI_OAUTH_PATH
 OPENAI_OAUTH_AUTH_JSON_PATH
 ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID
 ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID_PATH
+ASSISTANT_OPENROUTER_API_KEY
+OPENROUTER_API_KEY
 ```
+
+For `openrouter`, the base URL defaults to `https://openrouter.ai/api/v1` and the
+API mode defaults to `chat-completions`. Override either with
+`ASSISTANT_OPENAI_BASE_URL`/`--base-url` and `ASSISTANT_OPENAI_API_MODE`/`--api-mode`.
 
 ## Runtime Defaults
 

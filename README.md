@@ -8,7 +8,7 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 
 ## Features
 
-- OpenAI provider support through OAuth credentials or an API key.
+- OpenAI provider support through OAuth credentials or an API key, plus OpenRouter via an API key.
 - Interactive REPL and one-shot prompt execution.
 - Per-conversation in-process history with host-side slash commands.
 - SDK tools, guardrails, approvals, compaction, and durable memory.
@@ -168,7 +168,7 @@ standalone scheduler process.
 
 ```text
 --config            assistant extension config JSON
---provider          openai-oauth or openai-api
+--provider          openai-oauth, openai-api, or openrouter
 --model             model name
 --workdir           workspace for SDK tools
 --permission        workspace-write or read-only

@@ -52,7 +52,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		activePhase = "chat"
 	}
 	rt := sdkruntime.Config{
-		Provider:                "openai",
+		Provider:                sdkProviderName(cfg.Provider),
 		Model:                   cfg.Model,
 		BaseURL:                 cfg.BaseURL,
 		APIMode:                 cfg.APIMode,
@@ -96,6 +96,9 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		rt.OpenAIOAuthAccountID = cfg.OpenAIOAuthAccountID
 		rt.OpenAIOAuthAccountIDPath = cfg.OpenAIAccountIDPath
 	case providerOpenAIAPI:
+		rt.AuthMode = string(sdkopenai.AuthModeAPIKey)
+		rt.APIKey = cfg.APIKey
+	case providerOpenRouter:
 		rt.AuthMode = string(sdkopenai.AuthModeAPIKey)
 		rt.APIKey = cfg.APIKey
 	}
