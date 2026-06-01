@@ -2,9 +2,7 @@
 
 FROM gcr.io/distroless/static-debian12:nonroot
 
-ARG TARGETPLATFORM
-
 # GoReleaser provides already-built platform binaries in the build context.
-COPY ${TARGETPLATFORM}/assistant /usr/local/bin/assistant
+COPY assistant /usr/local/bin/assistant
 
 ENTRYPOINT ["/usr/local/bin/assistant"]
