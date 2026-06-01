@@ -376,6 +376,7 @@ extension config:
 
 examples:
   assistant version
+  assistant update
   assistant oauth-refresh
   assistant --provider openai-oauth
   assistant schedule --provider openai-oauth

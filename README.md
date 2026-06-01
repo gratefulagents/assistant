@@ -77,6 +77,12 @@ Check the installed binary:
 assistant version
 ```
 
+Update an installed release binary in place:
+
+```sh
+assistant update
+```
+
 From a source checkout, run without installing:
 
 ```sh

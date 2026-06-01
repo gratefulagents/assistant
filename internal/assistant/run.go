@@ -18,6 +18,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, versionText())
 		return 0
 	}
+	if len(args) > 0 && args[0] == "update" {
+		return runUpdate(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "family-deploy" {
 		return runFamilyDeploy(args[1:], stdin, stdout, stderr)
 	}
@@ -78,7 +81,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func isCommand(arg string) bool {
 	switch arg {
-	case "serve", "telegram", "gmail", "schedule", "poll", "version", "oauth-refresh", "refresh-oauth":
+	case "serve", "telegram", "gmail", "schedule", "poll", "version", "update", "oauth-refresh", "refresh-oauth":
 		return true
 	default:
 		return false
