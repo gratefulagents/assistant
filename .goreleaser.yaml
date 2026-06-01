@@ -54,6 +54,9 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
+    sbom: false
+    flags:
+      - "--pull=true"
     labels:
       "org.opencontainers.image.created": "{{ .Date }}"
       "org.opencontainers.image.name": "{{ .ProjectName }}"

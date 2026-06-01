@@ -46,10 +46,24 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release from conventional commits
+        id: semrel
         uses: go-semantic-release/action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          hooks: goreleaser
           allow-initial-development-versions: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch release tag
+        if: steps.semrel.outputs.version != ''
+        run: git fetch --force origin "refs/tags/v${{ steps.semrel.outputs.version }}:refs/tags/v${{ steps.semrel.outputs.version }}"
+
+      - name: Publish release artifacts
+        if: steps.semrel.outputs.version != ''
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
