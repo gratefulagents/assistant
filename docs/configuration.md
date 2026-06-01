@@ -17,9 +17,16 @@ Examples:
 
 ```sh
 assistant --provider openai-oauth
+assistant --provider openai-oauth --openai-oauth-refresh=false
+assistant oauth-refresh
 OPENAI_API_KEY=sk-... assistant --provider openai-api
 OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
 ```
+
+Use `--openai-oauth-refresh=false` for long-running Assistant processes that
+share one OAuth file. Then run `assistant oauth-refresh` from a single process;
+it refreshes immediately and then every hour by default. Pass
+`--oauth-refresh-interval=0` for a one-shot refresh.
 
 Provider-specific environment variables:
 
@@ -35,6 +42,8 @@ ASSISTANT_OPENAI_OAUTH_PATH
 OPENAI_OAUTH_AUTH_JSON_PATH
 ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID
 ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID_PATH
+ASSISTANT_OPENAI_OAUTH_REFRESH
+ASSISTANT_OPENAI_OAUTH_REFRESH_INTERVAL
 ASSISTANT_OPENROUTER_API_KEY
 OPENROUTER_API_KEY
 ```

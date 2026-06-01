@@ -26,7 +26,11 @@ func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *au
 	if err != nil {
 		return nil, err
 	}
-	builder := sdkruntime.NewBuilder(runtimeConfig(cfg, extensions, audit),
+	rt, err := runtimeConfig(cfg, extensions, audit)
+	if err != nil {
+		return nil, err
+	}
+	builder := sdkruntime.NewBuilder(rt,
 		sdkruntime.WithStatusFunc(func(text string) {
 			if cfg.Debug {
 				fmt.Fprintln(stderr, "[status]", text)
@@ -39,7 +43,7 @@ func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *au
 	return builder.Build(ctx)
 }
 
-func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecorder) sdkruntime.Config {
+func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecorder) (sdkruntime.Config, error) {
 	sessionMode := cfg.SessionMode
 	if sessionMode == "" {
 		sessionMode = agentsdk.SessionModeChat
@@ -96,6 +100,14 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		rt.OpenAIOAuthPath = cfg.OpenAIOAuthPath
 		rt.OpenAIOAuthAccountID = cfg.OpenAIOAuthAccountID
 		rt.OpenAIOAuthAccountIDPath = cfg.OpenAIAccountIDPath
+		if cfg.DisableOpenAIOAuthRefresh {
+			session, err := newOpenAIOAuthSession(cfg, "")
+			if err != nil {
+				return sdkruntime.Config{}, err
+			}
+			session.DisableRefresh()
+			rt.OpenAIAuthSession = session
+		}
 	case providerOpenAIAPI:
 		rt.AuthMode = string(sdkopenai.AuthModeAPIKey)
 		rt.APIKey = cfg.APIKey
@@ -103,7 +115,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		rt.AuthMode = string(sdkopenai.AuthModeAPIKey)
 		rt.APIKey = cfg.APIKey
 	}
-	return rt
+	return rt, nil
 }
 
 func closeBundle(bundle *sdkruntime.Bundle, stderr io.Writer) {

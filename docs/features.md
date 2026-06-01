@@ -372,7 +372,7 @@ is set and supplied as a bearer token.
 containerized assistants: one per family member, plus any "freeloaders" you add.
 It prompts for how many family members there are, their names, and the
 freeloaders, then writes an `assistant.yaml` deployment file and drives Docker
-to bring up one container per person.
+to bring up one container per person plus one OpenAI OAuth refresher container.
 
 Each member's container:
 
@@ -384,6 +384,10 @@ Each member's container:
 - restarts automatically (`--restart unless-stopped`),
 - is individually configurable (Telegram bot token, allowed users/chats, model,
   and extra environment variables) through `assistant.yaml`.
+
+The refresher container mounts the host Codex `auth.json` writable and runs
+`assistant oauth-refresh` every hour by default. Member containers never refresh
+OAuth themselves.
 
 ```sh
 # Interactive: generate assistant.yaml and deploy
@@ -441,6 +445,9 @@ provider: openai-oauth
 codexAuthPath: ~/.codex/auth.json
 restart: unless-stopped
 user: "0:0"
+refresher:
+  container: assistant-oauth-refresher
+  interval: 1h
 members:
   - name: Alice
     role: family
@@ -465,3 +472,7 @@ owns the volume. Each member needs their own Telegram bot token from
 [BotFather](https://core.telegram.org/bots/features#botfather) and at least one
 allowed Telegram user; both are required when configuring a member interactively
 and are validated when an edited `assistant.yaml` is loaded.
+Family member containers mount the shared Codex OAuth file read-only and run
+with `--openai-oauth-refresh=false`. OpenAI OAuth deployments also run one
+refresher container with a writable auth mount; by default it refreshes
+immediately and then every hour.

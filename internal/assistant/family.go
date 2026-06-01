@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,6 +25,7 @@ const (
 	defaultFamilyImage      = "ghcr.io/gratefulagents/assistant:latest"
 	defaultFamilyConfigPath = "assistant.yaml"
 	defaultFamilyRestart    = "unless-stopped"
+	defaultFamilyRefresher  = "assistant-oauth-refresher"
 	// defaultFamilyUser runs each container as root so the assistant can write
 	// to its named state volume (a distroless nonroot user cannot), which is
 	// what keeps a member's durable data intact across container restarts.
@@ -40,11 +42,17 @@ type familyConfig struct {
 	Provider      string            `yaml:"provider"`
 	CodexAuthPath string            `yaml:"codexAuthPath"`
 	Restart       string            `yaml:"restart"`
+	Refresher     familyRefresher   `yaml:"refresher,omitempty"`
 	User          string            `yaml:"user,omitempty"`
 	Audit         *bool             `yaml:"audit,omitempty"`
 	AuditLevel    string            `yaml:"auditLevel,omitempty"`
 	Defaults      assistantSettings `yaml:"defaults,omitempty"`
 	Members       []familyMember    `yaml:"members"`
+}
+
+type familyRefresher struct {
+	Container string `yaml:"container,omitempty"`
+	Interval  string `yaml:"interval,omitempty"`
 }
 
 // familyMember is a single deployed assistant: one family member or freeloader,
@@ -74,6 +82,7 @@ type assistantSettings struct {
 	APIKey              string   `yaml:"apiKey,omitempty"`
 	OAuthAccountID      string   `yaml:"openaiOauthAccountId,omitempty"`
 	OAuthAccountIDPath  string   `yaml:"openaiOauthAccountIdPath,omitempty"`
+	OAuthRefresh        *bool    `yaml:"openaiOauthRefresh,omitempty"`
 	Permission          string   `yaml:"permission,omitempty"`
 	Reasoning           string   `yaml:"reasoning,omitempty"`
 	Verbosity           string   `yaml:"verbosity,omitempty"`
@@ -412,6 +421,8 @@ func (c *familyConfig) applyDefaults() {
 	c.Provider = firstNonEmpty(normalizeProvider(c.Provider), providerOpenAIOAuth)
 	c.CodexAuthPath = firstNonEmpty(c.CodexAuthPath, defaultOAuthPath())
 	c.Restart = firstNonEmpty(c.Restart, defaultFamilyRestart)
+	c.Refresher.Container = firstNonEmpty(c.Refresher.Container, defaultFamilyRefresher)
+	c.Refresher.Interval = firstNonEmpty(c.Refresher.Interval, defaultOAuthRefreshIntervalText)
 	c.User = firstNonEmpty(c.User, defaultFamilyUser)
 	if c.Audit == nil {
 		// Family containers run unattended, so default to low-level auditing for
@@ -440,6 +451,12 @@ func (c familyConfig) validate() error {
 		return errors.New("no members configured")
 	}
 	seen := map[string]bool{}
+	if strings.TrimSpace(c.Refresher.Container) != "" {
+		seen[c.Refresher.Container] = true
+	}
+	if _, err := parseFamilyRefreshInterval(c.Refresher.Interval); err != nil {
+		return err
+	}
 	for _, m := range c.Members {
 		if strings.TrimSpace(m.Name) == "" {
 			return errors.New("a member is missing a name")
@@ -474,6 +491,14 @@ func familyUp(cfg familyConfig, dryRun bool, stdout, stderr io.Writer) error {
 		}
 	}
 
+	if cfg.Provider == providerOpenAIOAuth {
+		fmt.Fprintf(stdout, "==> %s (oauth-refresher)\n", cfg.Refresher.Container)
+		_ = runDockerQuiet(dryRun, "rm", "-f", cfg.Refresher.Container)
+		if err := runDocker(dryRun, stdout, stderr, familyRefresherRunArgs(cfg, authPath)...); err != nil {
+			return fmt.Errorf("run container %s: %w", cfg.Refresher.Container, err)
+		}
+	}
+
 	for _, m := range cfg.Members {
 		fmt.Fprintf(stdout, "==> %s (%s)\n", m.Container, m.Role)
 		if err := runDocker(dryRun, stdout, stderr, "volume", "create", m.Volume); err != nil {
@@ -490,6 +515,45 @@ func familyUp(cfg familyConfig, dryRun bool, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "\nDeployed %d member(s). Check status with `assistant family-deploy status`.\n", len(cfg.Members))
 	return nil
+}
+
+func parseFamilyRefreshInterval(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		raw = defaultOAuthRefreshIntervalText
+	}
+	interval, err := time.ParseDuration(raw)
+	if err != nil {
+		return "", fmt.Errorf("refresher.interval must be a duration like 1h: %w", err)
+	}
+	if interval <= 0 {
+		return "", errors.New("refresher.interval must be positive")
+	}
+	return raw, nil
+}
+
+func familyRefresherRunArgs(cfg familyConfig, authPath string) []string {
+	interval, err := parseFamilyRefreshInterval(cfg.Refresher.Interval)
+	if err != nil {
+		interval = defaultOAuthRefreshIntervalText
+	}
+	args := []string{
+		"run", "-d",
+		"--name", cfg.Refresher.Container,
+		"--restart", cfg.Restart,
+		"--label", "com.gratefulagents.assistant.role=oauth-refresher",
+		"--label", "com.gratefulagents.assistant.member=oauth-refresh",
+		"-v", authPath + ":" + familyOAuthMount,
+	}
+	if strings.TrimSpace(cfg.User) != "" {
+		args = append(args, "--user", cfg.User)
+	}
+	args = append(args, cfg.Image,
+		"oauth-refresh",
+		"--openai-oauth-path", familyOAuthMount,
+		"--oauth-refresh-interval", interval,
+	)
+	return args
 }
 
 // familyRunArgs builds the `docker run` argument list for a single member.
@@ -519,6 +583,7 @@ func familyRunArgs(cfg familyConfig, m familyMember, authPath string) []string {
 		"telegram",
 		"--provider", firstNonEmpty(cfg.Provider, providerOpenAIOAuth),
 		"--openai-oauth-path", familyOAuthMount,
+		"--openai-oauth-refresh=false",
 		"--state-dir", familyStateMount,
 	)
 	if cfg.Audit == nil || *cfg.Audit {
@@ -559,6 +624,9 @@ func (base assistantSettings) merge(override assistantSettings) assistantSetting
 	}
 	if override.OAuthAccountIDPath != "" {
 		out.OAuthAccountIDPath = override.OAuthAccountIDPath
+	}
+	if override.OAuthRefresh != nil {
+		out.OAuthRefresh = override.OAuthRefresh
 	}
 	if override.Permission != "" {
 		out.Permission = override.Permission
@@ -655,6 +723,7 @@ func (s assistantSettings) renderArgs() []string {
 	addStr("api-key", s.APIKey)
 	addStr("openai-oauth-account-id", s.OAuthAccountID)
 	addStr("openai-oauth-account-id-path", s.OAuthAccountIDPath)
+	addBool("openai-oauth-refresh", s.OAuthRefresh)
 	addStr("permission", s.Permission)
 	addStr("reasoning", s.Reasoning)
 	addStr("verbosity", s.Verbosity)
@@ -685,6 +754,12 @@ func (s assistantSettings) renderArgs() []string {
 func familyDown(cfg familyConfig, dryRun bool, stdout, stderr io.Writer) error {
 	if err := requireDocker(dryRun); err != nil {
 		return err
+	}
+	if cfg.Provider == providerOpenAIOAuth {
+		fmt.Fprintf(stdout, "==> removing %s\n", cfg.Refresher.Container)
+		if err := runDocker(dryRun, stdout, stderr, "rm", "-f", cfg.Refresher.Container); err != nil {
+			return fmt.Errorf("remove container %s: %w", cfg.Refresher.Container, err)
+		}
 	}
 	for _, m := range cfg.Members {
 		fmt.Fprintf(stdout, "==> removing %s\n", m.Container)
@@ -740,6 +815,8 @@ Interactively configure a family of containerized assistants and manage their
 Docker containers. Each family member and freeloader gets their own container,
 a persistent named volume (data survives restarts), the host Codex OAuth
 auth.json mounted read-only, and an individually configurable Telegram bot.
+OpenAI OAuth deployments also run one refresher container that rewrites the
+shared auth.json every hour by default.
 
 actions:
   up        (default) create/refresh containers from assistant.yaml; prompts to

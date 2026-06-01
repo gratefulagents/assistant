@@ -16,7 +16,7 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 - Optional MCP servers from workspace, user, and extension config files.
 - Optional skill discovery, install, and catalog tools.
 - Outbound polling integrations for Telegram and Gmail.
-- `family-deploy` to interactively stand up one containerized assistant per family member or freeloader.
+- `family-deploy` to stand up one containerized assistant per family member or freeloader, plus one OAuth refresher.
 - Small authenticated local JSON gateway for trusted local automation.
 
 ## Install
@@ -93,6 +93,16 @@ npx @openai/codex login
 
 This writes the OpenAI OAuth auth file that Assistant reads from
 `~/.codex/auth.json` by default.
+
+If multiple long-running Assistant processes share that file, run them with
+`--openai-oauth-refresh=false` and refresh the file from one place. The
+refresher refreshes immediately and then every hour by default:
+
+```sh
+assistant oauth-refresh
+```
+
+Use `assistant oauth-refresh --oauth-refresh-interval=0` for a one-shot refresh.
 
 The examples below run with read-only workspace access and a 100-turn run
 budget:
@@ -175,6 +185,8 @@ standalone scheduler process.
 ```text
 --config            assistant extension config JSON
 --provider          openai-oauth, openai-api, or openrouter
+--openai-oauth-refresh  allow OAuth refresh during assistant runs
+--oauth-refresh-interval  repeat interval for oauth-refresh; 0 runs once
 --model             model name
 --workdir           workspace for SDK tools
 --permission        workspace-write or read-only
@@ -263,6 +275,7 @@ assistant telegram              # Telegram long polling
 assistant gmail                 # Gmail polling
 assistant schedule              # run scheduled prompts
 assistant poll                  # run every configured poller
+assistant oauth-refresh         # refresh the OpenAI OAuth auth JSON every hour
 assistant family-deploy         # configure & run one container per family member
 ```
 

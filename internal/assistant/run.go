@@ -31,7 +31,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
-	if err := cfg.validate(); err != nil {
+	if isOAuthRefreshCommand(command) {
+		err = cfg.validateOAuthRefreshCommand()
+	} else {
+		err = cfg.validate()
+	}
+	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2
 	}
@@ -43,6 +48,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	defer stop()
 
 	switch cfg.Command {
+	case "oauth-refresh", "refresh-oauth":
+		err = runOAuthRefresh(ctx, cfg, stdout, stderr)
 	case "serve":
 		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runGateway)
 	case "telegram":
@@ -71,7 +78,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func isCommand(arg string) bool {
 	switch arg {
-	case "serve", "telegram", "gmail", "schedule", "poll", "version":
+	case "serve", "telegram", "gmail", "schedule", "poll", "version", "oauth-refresh", "refresh-oauth":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOAuthRefreshCommand(arg string) bool {
+	switch strings.TrimSpace(strings.ToLower(arg)) {
+	case "oauth-refresh", "refresh-oauth":
 		return true
 	default:
 		return false

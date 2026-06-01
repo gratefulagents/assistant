@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func compactJSON(raw json.RawMessage) string {
@@ -119,6 +120,18 @@ func envInt(name string, fallback int) int {
 		return fallback
 	}
 	out, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+	return out
+}
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return fallback
+	}
+	out, err := time.ParseDuration(value)
 	if err != nil {
 		return fallback
 	}

@@ -10,69 +10,77 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	sdkpolicy "github.com/gratefulagents/sdk/pkg/agentsdk/policy"
 )
 
+const (
+	defaultOAuthRefreshInterval     = time.Hour
+	defaultOAuthRefreshIntervalText = "1h"
+)
+
 type appConfig struct {
-	Provider             string
-	Model                string
-	BaseURL              string
-	APIMode              string
-	APIKey               string
-	OpenAIOAuthPath      string
-	OpenAIOAuthAccountID string
-	OpenAIAccountIDPath  string
-	WorkDir              string
-	StateDir             string
-	EmbeddingModel       string
-	EmbeddingBaseURL     string
-	EmbeddingAPIKey      string
-	EmbeddingDimensions  int
-	ConfigPath           string
-	MCPConfigPaths       stringListFlag
-	SkillCatalogPath     string
-	Permission           string
-	Reasoning            string
-	Verbosity            string
-	MaxTurns             int
-	MaxTokens            int
-	ToolTimeout          int
-	EnableTools          bool
-	EnableMCP            bool
-	EnableSkills         bool
-	EnableScheduling     bool
-	EnableProjectState   bool
-	EnableApproval       bool
-	EnableGuardrails     bool
-	EnableCompaction     bool
-	AllowPrivateNetwork  bool
-	Audit                bool
-	AuditLevel           string
-	AuditLogPath         string
-	Debug                bool
-	Command              string
-	SessionMode          agentsdk.SessionMode
-	ActiveMode           string
-	ActivePhase          string
-	ModeDirectiveText    string
-	Serve                bool
-	GatewayAddr          string
-	GatewayToken         string
-	TelegramBotToken     string
-	TelegramAllowedUsers stringListFlag
-	TelegramAllowedChats stringListFlag
-	TelegramPollTimeout  int
-	GmailToken           string
-	GmailUser            string
-	GmailQuery           string
-	GmailPollInterval    int
-	GmailMaxResults      int
-	GmailMarkRead        bool
-	GmailSendReplies     bool
-	Prompt               string
-	FileConfig           assistantConfigFile
+	Provider                  string
+	Model                     string
+	BaseURL                   string
+	APIMode                   string
+	APIKey                    string
+	OpenAIOAuthPath           string
+	OpenAIOAuthAccountID      string
+	OpenAIAccountIDPath       string
+	DisableOpenAIOAuthRefresh bool
+	OAuthRefreshInterval      time.Duration
+	WorkDir                   string
+	StateDir                  string
+	EmbeddingModel            string
+	EmbeddingBaseURL          string
+	EmbeddingAPIKey           string
+	EmbeddingDimensions       int
+	ConfigPath                string
+	MCPConfigPaths            stringListFlag
+	SkillCatalogPath          string
+	Permission                string
+	Reasoning                 string
+	Verbosity                 string
+	MaxTurns                  int
+	MaxTokens                 int
+	ToolTimeout               int
+	EnableTools               bool
+	EnableMCP                 bool
+	EnableSkills              bool
+	EnableScheduling          bool
+	EnableProjectState        bool
+	EnableApproval            bool
+	EnableGuardrails          bool
+	EnableCompaction          bool
+	AllowPrivateNetwork       bool
+	Audit                     bool
+	AuditLevel                string
+	AuditLogPath              string
+	Debug                     bool
+	Command                   string
+	SessionMode               agentsdk.SessionMode
+	ActiveMode                string
+	ActivePhase               string
+	ModeDirectiveText         string
+	Serve                     bool
+	GatewayAddr               string
+	GatewayToken              string
+	TelegramBotToken          string
+	TelegramAllowedUsers      stringListFlag
+	TelegramAllowedChats      stringListFlag
+	TelegramPollTimeout       int
+	GmailToken                string
+	GmailUser                 string
+	GmailQuery                string
+	GmailPollInterval         int
+	GmailMaxResults           int
+	GmailMarkRead             bool
+	GmailSendReplies          bool
+	Prompt                    string
+	FileConfig                assistantConfigFile
 }
 
 func parseConfig(args []string) (appConfig, error) {
@@ -89,6 +97,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.OpenAIOAuthPath, "openai-oauth-path", cfg.OpenAIOAuthPath, "OpenAI OAuth auth JSON path")
 	fs.StringVar(&cfg.OpenAIOAuthAccountID, "openai-oauth-account-id", cfg.OpenAIOAuthAccountID, "OpenAI OAuth account ID override")
 	fs.StringVar(&cfg.OpenAIAccountIDPath, "openai-oauth-account-id-path", cfg.OpenAIAccountIDPath, "OpenAI OAuth account ID file")
+	openAIOAuthRefresh := !cfg.DisableOpenAIOAuthRefresh
+	fs.BoolVar(&openAIOAuthRefresh, "openai-oauth-refresh", openAIOAuthRefresh, "allow OpenAI OAuth access-token refresh during assistant runs")
+	fs.DurationVar(&cfg.OAuthRefreshInterval, "oauth-refresh-interval", cfg.OAuthRefreshInterval, "repeat oauth-refresh every duration; 0 runs once")
 	fs.StringVar(&cfg.WorkDir, "workdir", cfg.WorkDir, "workspace for assistant tools")
 	fs.StringVar(&cfg.StateDir, "state-dir", cfg.StateDir, "durable assistant state directory")
 	fs.StringVar(&cfg.Permission, "permission", cfg.Permission, "tool permission: workspace-write or read-only")
@@ -132,6 +143,7 @@ func parseConfig(args []string) (appConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, fmt.Errorf("%w\n\n%s", err, usage())
 	}
+	cfg.DisableOpenAIOAuthRefresh = !openAIOAuthRefresh
 	cfg.Prompt = strings.Join(fs.Args(), " ")
 	return cfg, nil
 }
@@ -142,54 +154,56 @@ func defaultConfig() appConfig {
 		wd = "."
 	}
 	return appConfig{
-		ConfigPath:           firstNonEmpty(os.Getenv("ASSISTANT_CONFIG"), defaultConfigPath()),
-		Provider:             firstNonEmpty(os.Getenv("ASSISTANT_PROVIDER"), providerOpenAIOAuth),
-		Model:                strings.TrimSpace(os.Getenv("ASSISTANT_MODEL")),
-		BaseURL:              firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
-		APIMode:              strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_API_MODE")),
-		APIKey:               firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
-		OpenAIOAuthPath:      firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_OAUTH_PATH"), os.Getenv("OPENAI_OAUTH_AUTH_JSON_PATH"), defaultOAuthPath()),
-		OpenAIOAuthAccountID: strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID")),
-		OpenAIAccountIDPath:  strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID_PATH")),
-		WorkDir:              firstNonEmpty(os.Getenv("ASSISTANT_WORKDIR"), wd),
-		StateDir:             firstNonEmpty(os.Getenv("ASSISTANT_STATE_DIR"), defaultStateDir()),
-		EmbeddingModel:       strings.TrimSpace(os.Getenv("ASSISTANT_EMBEDDING_MODEL")),
-		EmbeddingBaseURL:     firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_BASE_URL"), os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
-		EmbeddingAPIKey:      firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_API_KEY"), os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
-		EmbeddingDimensions:  envInt("ASSISTANT_EMBEDDING_DIMENSIONS", 0),
-		MCPConfigPaths:       splitListEnv(os.Getenv("ASSISTANT_MCP_CONFIGS")),
-		SkillCatalogPath:     strings.TrimSpace(os.Getenv("ASSISTANT_SKILL_CATALOG")),
-		Permission:           firstNonEmpty(os.Getenv("ASSISTANT_PERMISSION"), string(sdkpolicy.PermissionModeWorkspaceWrite)),
-		Reasoning:            firstNonEmpty(os.Getenv("ASSISTANT_REASONING"), string(agentsdk.ReasoningLow)),
-		Verbosity:            firstNonEmpty(os.Getenv("ASSISTANT_VERBOSITY"), string(agentsdk.TextVerbosityMedium)),
-		MaxTurns:             envInt("ASSISTANT_MAX_TURNS", 8),
-		MaxTokens:            envInt("ASSISTANT_MAX_TOKENS", 1200),
-		ToolTimeout:          envInt("ASSISTANT_TOOL_TIMEOUT", 0),
-		EnableTools:          envBool("ASSISTANT_TOOLS", true),
-		EnableMCP:            envBool("ASSISTANT_MCP", false),
-		EnableSkills:         envBool("ASSISTANT_SKILLS", false),
-		EnableScheduling:     envBool("ASSISTANT_SCHEDULING", true),
-		EnableProjectState:   envBool("ASSISTANT_PROJECT_STATE", true),
-		EnableApproval:       envBool("ASSISTANT_APPROVAL", true),
-		EnableGuardrails:     envBool("ASSISTANT_GUARDRAILS", true),
-		EnableCompaction:     envBool("ASSISTANT_COMPACTION", true),
-		AllowPrivateNetwork:  envBool("ASSISTANT_PRIVATE_NETWORK", false),
-		Audit:                envBool("ASSISTANT_AUDIT", false),
-		AuditLevel:           firstNonEmpty(os.Getenv("ASSISTANT_AUDIT_LEVEL"), auditLevelFull),
-		AuditLogPath:         strings.TrimSpace(os.Getenv("ASSISTANT_AUDIT_LOG")),
-		GatewayAddr:          firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
-		GatewayToken:         strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
-		TelegramBotToken:     strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
-		TelegramAllowedUsers: splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
-		TelegramAllowedChats: splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),
-		TelegramPollTimeout:  envInt("ASSISTANT_TELEGRAM_POLL_TIMEOUT", 50),
-		GmailToken:           firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_ACCESS_TOKEN"), os.Getenv("ASSISTANT_GMAIL_TOKEN")),
-		GmailUser:            firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_USER"), "me"),
-		GmailQuery:           firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_QUERY"), "is:unread"),
-		GmailPollInterval:    envInt("ASSISTANT_GMAIL_POLL_INTERVAL", 60),
-		GmailMaxResults:      envInt("ASSISTANT_GMAIL_MAX_RESULTS", 10),
-		GmailMarkRead:        envBool("ASSISTANT_GMAIL_MARK_READ", false),
-		GmailSendReplies:     envBool("ASSISTANT_GMAIL_SEND_REPLIES", false),
+		ConfigPath:                firstNonEmpty(os.Getenv("ASSISTANT_CONFIG"), defaultConfigPath()),
+		Provider:                  firstNonEmpty(os.Getenv("ASSISTANT_PROVIDER"), providerOpenAIOAuth),
+		Model:                     strings.TrimSpace(os.Getenv("ASSISTANT_MODEL")),
+		BaseURL:                   firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
+		APIMode:                   strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_API_MODE")),
+		APIKey:                    firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		OpenAIOAuthPath:           firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_OAUTH_PATH"), os.Getenv("OPENAI_OAUTH_AUTH_JSON_PATH"), defaultOAuthPath()),
+		OpenAIOAuthAccountID:      strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID")),
+		OpenAIAccountIDPath:       strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID_PATH")),
+		DisableOpenAIOAuthRefresh: !envBool("ASSISTANT_OPENAI_OAUTH_REFRESH", true),
+		OAuthRefreshInterval:      envDuration("ASSISTANT_OPENAI_OAUTH_REFRESH_INTERVAL", defaultOAuthRefreshInterval),
+		WorkDir:                   firstNonEmpty(os.Getenv("ASSISTANT_WORKDIR"), wd),
+		StateDir:                  firstNonEmpty(os.Getenv("ASSISTANT_STATE_DIR"), defaultStateDir()),
+		EmbeddingModel:            strings.TrimSpace(os.Getenv("ASSISTANT_EMBEDDING_MODEL")),
+		EmbeddingBaseURL:          firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_BASE_URL"), os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
+		EmbeddingAPIKey:           firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_API_KEY"), os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		EmbeddingDimensions:       envInt("ASSISTANT_EMBEDDING_DIMENSIONS", 0),
+		MCPConfigPaths:            splitListEnv(os.Getenv("ASSISTANT_MCP_CONFIGS")),
+		SkillCatalogPath:          strings.TrimSpace(os.Getenv("ASSISTANT_SKILL_CATALOG")),
+		Permission:                firstNonEmpty(os.Getenv("ASSISTANT_PERMISSION"), string(sdkpolicy.PermissionModeWorkspaceWrite)),
+		Reasoning:                 firstNonEmpty(os.Getenv("ASSISTANT_REASONING"), string(agentsdk.ReasoningLow)),
+		Verbosity:                 firstNonEmpty(os.Getenv("ASSISTANT_VERBOSITY"), string(agentsdk.TextVerbosityMedium)),
+		MaxTurns:                  envInt("ASSISTANT_MAX_TURNS", 8),
+		MaxTokens:                 envInt("ASSISTANT_MAX_TOKENS", 1200),
+		ToolTimeout:               envInt("ASSISTANT_TOOL_TIMEOUT", 0),
+		EnableTools:               envBool("ASSISTANT_TOOLS", true),
+		EnableMCP:                 envBool("ASSISTANT_MCP", false),
+		EnableSkills:              envBool("ASSISTANT_SKILLS", false),
+		EnableScheduling:          envBool("ASSISTANT_SCHEDULING", true),
+		EnableProjectState:        envBool("ASSISTANT_PROJECT_STATE", true),
+		EnableApproval:            envBool("ASSISTANT_APPROVAL", true),
+		EnableGuardrails:          envBool("ASSISTANT_GUARDRAILS", true),
+		EnableCompaction:          envBool("ASSISTANT_COMPACTION", true),
+		AllowPrivateNetwork:       envBool("ASSISTANT_PRIVATE_NETWORK", false),
+		Audit:                     envBool("ASSISTANT_AUDIT", false),
+		AuditLevel:                firstNonEmpty(os.Getenv("ASSISTANT_AUDIT_LEVEL"), auditLevelFull),
+		AuditLogPath:              strings.TrimSpace(os.Getenv("ASSISTANT_AUDIT_LOG")),
+		GatewayAddr:               firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
+		GatewayToken:              strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
+		TelegramBotToken:          strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
+		TelegramAllowedUsers:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
+		TelegramAllowedChats:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),
+		TelegramPollTimeout:       envInt("ASSISTANT_TELEGRAM_POLL_TIMEOUT", 50),
+		GmailToken:                firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_ACCESS_TOKEN"), os.Getenv("ASSISTANT_GMAIL_TOKEN")),
+		GmailUser:                 firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_USER"), "me"),
+		GmailQuery:                firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_QUERY"), "is:unread"),
+		GmailPollInterval:         envInt("ASSISTANT_GMAIL_POLL_INTERVAL", 60),
+		GmailMaxResults:           envInt("ASSISTANT_GMAIL_MAX_RESULTS", 10),
+		GmailMarkRead:             envBool("ASSISTANT_GMAIL_MARK_READ", false),
+		GmailSendReplies:          envBool("ASSISTANT_GMAIL_SEND_REPLIES", false),
 	}
 }
 
@@ -281,6 +295,21 @@ func (c *appConfig) validate() error {
 	return nil
 }
 
+func (c *appConfig) validateOAuthRefreshCommand() error {
+	c.OpenAIOAuthPath = expandUserPath(c.OpenAIOAuthPath)
+	c.OpenAIAccountIDPath = expandUserPath(c.OpenAIAccountIDPath)
+	if strings.TrimSpace(c.OpenAIOAuthPath) == "" {
+		return errors.New("oauth-refresh requires --openai-oauth-path")
+	}
+	if strings.TrimSpace(c.Prompt) != "" {
+		return errors.New("oauth-refresh does not accept a prompt")
+	}
+	if c.OAuthRefreshInterval < 0 {
+		return errors.New("--oauth-refresh-interval must be non-negative")
+	}
+	return nil
+}
+
 func (c *appConfig) loadFileConfig() error {
 	path := strings.TrimSpace(c.ConfigPath)
 	if path == "" {
@@ -347,6 +376,7 @@ extension config:
 
 examples:
   assistant version
+  assistant oauth-refresh
   assistant --provider openai-oauth
   assistant schedule --provider openai-oauth
   assistant telegram --provider openai-oauth

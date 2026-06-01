@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	sdkmcp "github.com/gratefulagents/sdk/pkg/agentsdk/mcp"
@@ -118,7 +119,10 @@ func TestValidateOpenRouterProviderDefaults(t *testing.T) {
 		t.Fatalf("Model = %q, want %q", cfg.Model, defaultOpenRouterModel)
 	}
 
-	rt := runtimeConfig(cfg, extensionBundle{}, nil)
+	rt, err := runtimeConfig(cfg, extensionBundle{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rt.Provider != "openrouter" {
 		t.Fatalf("runtime Provider = %q, want openrouter", rt.Provider)
 	}
@@ -156,6 +160,94 @@ func TestValidateOAuthProviderDefaultsModel(t *testing.T) {
 	}
 	if cfg.Model != sdkopenai.DefaultChatMiniModel {
 		t.Fatalf("Model = %q, want %q", cfg.Model, sdkopenai.DefaultChatMiniModel)
+	}
+}
+
+func TestOpenAIOAuthRefreshFlagOverridesEnv(t *testing.T) {
+	t.Setenv("ASSISTANT_OPENAI_OAUTH_REFRESH", "false")
+	cfg, err := parseConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.DisableOpenAIOAuthRefresh {
+		t.Fatal("DisableOpenAIOAuthRefresh = false, want true from env")
+	}
+	if cfg.OAuthRefreshInterval != time.Hour {
+		t.Fatalf("OAuthRefreshInterval = %s, want 1h", cfg.OAuthRefreshInterval)
+	}
+	cfg, err = parseConfig([]string{"--openai-oauth-refresh=true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DisableOpenAIOAuthRefresh {
+		t.Fatal("DisableOpenAIOAuthRefresh = true, want false from flag override")
+	}
+}
+
+func TestRuntimeConfigCanDisableOpenAIOAuthRefresh(t *testing.T) {
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"tokens":{"access_token":"old-access","refresh_token":"old-refresh","account_id":"acct-1"},"last_refresh":"2000-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.Provider = providerOpenAIOAuth
+	cfg.OpenAIOAuthPath = authPath
+	cfg.DisableOpenAIOAuthRefresh = true
+	rt, err := runtimeConfig(cfg, extensionBundle{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.OpenAIAuthSession == nil {
+		t.Fatal("runtime OpenAIAuthSession = nil, want preloaded session")
+	}
+	if rt.OpenAIAuthSession.SupportsRefresh() {
+		t.Fatal("OpenAIAuthSession SupportsRefresh = true, want false")
+	}
+}
+
+func TestRefreshOAuthAuthFileWritesSerializedToken(t *testing.T) {
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"tokens":{"access_token":"old-access","refresh_token":"old-refresh","account_id":"acct-1","custom":"keep-token"},"last_refresh":"2000-01-01T00:00:00Z","custom":"keep"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), `"refresh_token":"old-refresh"`) {
+			t.Fatalf("refresh request missing refresh token: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"new-access","refresh_token":"new-refresh"}`))
+	}))
+	defer tokenServer.Close()
+
+	cfg := appConfig{OpenAIOAuthPath: authPath}
+	if err := refreshOAuthAuthFile(context.Background(), cfg, tokenServer.URL); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, want := range []string{`"access_token":"new-access"`, `"refresh_token":"new-refresh"`, `"account_id":"acct-1"`, `"custom":"keep"`, `"custom":"keep-token"`, `"last_refresh":`} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("refreshed auth file missing %s in %s", want, text)
+		}
+	}
+	info, err := os.Stat(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("auth file mode = %v, want 0600", got)
 	}
 }
 
@@ -385,7 +477,10 @@ func TestDurableMemoryToolsAreModelDriven(t *testing.T) {
 			t.Fatalf("missing durable memory tool %q; names=%v", want, names)
 		}
 	}
-	rt := runtimeConfig(cfg, extensions, nil)
+	rt, err := runtimeConfig(cfg, extensions, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rt.EnableProjectState {
 		t.Fatal("runtime EnableProjectState = true, want false so host does not auto-prime memory")
 	}

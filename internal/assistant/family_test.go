@@ -39,6 +39,12 @@ func TestFamilyConfigApplyDefaults(t *testing.T) {
 	if cfg.User != defaultFamilyUser {
 		t.Errorf("user = %q, want %q", cfg.User, defaultFamilyUser)
 	}
+	if cfg.Refresher.Container != defaultFamilyRefresher {
+		t.Errorf("refresher container = %q, want %q", cfg.Refresher.Container, defaultFamilyRefresher)
+	}
+	if cfg.Refresher.Interval != defaultOAuthRefreshIntervalText {
+		t.Errorf("refresher interval = %q, want %q", cfg.Refresher.Interval, defaultOAuthRefreshIntervalText)
+	}
 	if got, want := cfg.Members[0].Container, "assistant-family-alice"; got != want {
 		t.Errorf("member[0].Container = %q, want %q", got, want)
 	}
@@ -47,6 +53,41 @@ func TestFamilyConfigApplyDefaults(t *testing.T) {
 	}
 	if got, want := cfg.Members[1].Container, "assistant-freeloader-bob"; got != want {
 		t.Errorf("member[1].Container = %q, want %q", got, want)
+	}
+}
+
+func TestFamilyRefresherRunArgs(t *testing.T) {
+	cfg := familyConfig{
+		Image:    "ghcr.io/example/assistant:1.2.3",
+		Provider: providerOpenAIOAuth,
+		Restart:  "unless-stopped",
+		User:     "0:0",
+		Refresher: familyRefresher{
+			Container: "assistant-oauth-refresher",
+			Interval:  "1h",
+		},
+	}
+	args := familyRefresherRunArgs(cfg, "/host/auth.json")
+	joined := strings.Join(args, " ")
+
+	wants := []string{
+		"run -d",
+		"--name assistant-oauth-refresher",
+		"--restart unless-stopped",
+		"--label com.gratefulagents.assistant.role=oauth-refresher",
+		"-v /host/auth.json:" + familyOAuthMount,
+		"--user 0:0",
+		"ghcr.io/example/assistant:1.2.3 oauth-refresh",
+		"--openai-oauth-path " + familyOAuthMount,
+		"--oauth-refresh-interval 1h",
+	}
+	for _, want := range wants {
+		if !strings.Contains(joined, want) {
+			t.Errorf("refresher args missing %q\n got: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, ":ro") {
+		t.Errorf("refresher auth mount should be writable, got: %s", joined)
 	}
 }
 
@@ -80,6 +121,7 @@ func TestFamilyRunArgs(t *testing.T) {
 		"ghcr.io/example/assistant:1.2.3 telegram",
 		"--provider openai-oauth",
 		"--openai-oauth-path " + familyOAuthMount,
+		"--openai-oauth-refresh=false",
 		"--state-dir " + familyStateMount,
 		"--model gpt-test",
 		"--telegram-allowed-user 42",
@@ -116,6 +158,9 @@ func TestSaveAndLoadFamilyConfig(t *testing.T) {
 	if out.Image != defaultFamilyImage {
 		t.Errorf("image = %q, want %q", out.Image, defaultFamilyImage)
 	}
+	if out.Refresher.Interval != defaultOAuthRefreshIntervalText {
+		t.Errorf("refresher interval = %q, want %q", out.Refresher.Interval, defaultOAuthRefreshIntervalText)
+	}
 }
 
 func TestFamilyConfigValidateRequiresTokenAndAllowList(t *testing.T) {
@@ -142,6 +187,12 @@ func TestFamilyConfigValidateRequiresTokenAndAllowList(t *testing.T) {
 	noAllow.Members[0].TelegramAllowedUsers = nil
 	if err := noAllow.validate(); err == nil {
 		t.Error("expected error when telegramAllowedUsers is empty")
+	}
+
+	duplicateRefresher := base()
+	duplicateRefresher.Members[0].Container = duplicateRefresher.Refresher.Container
+	if err := duplicateRefresher.validate(); err == nil {
+		t.Error("expected error when a member uses the refresher container name")
 	}
 }
 
