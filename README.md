@@ -16,6 +16,7 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 - Optional MCP servers from workspace, user, and extension config files.
 - Optional skill discovery, install, and catalog tools.
 - Outbound polling integrations for Telegram and Gmail.
+- `family-deploy` to interactively stand up one containerized assistant per family member or freeloader.
 - Small authenticated local JSON gateway for trusted local automation.
 
 ## Install
@@ -262,6 +263,7 @@ assistant telegram              # Telegram long polling
 assistant gmail                 # Gmail polling
 assistant schedule              # run scheduled prompts
 assistant poll                  # run every configured poller
+assistant family-deploy         # configure & run one container per family member
 ```
 
 Polling integrations use outbound requests only. You do not need to expose a

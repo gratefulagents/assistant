@@ -365,3 +365,103 @@ clear that conversation's in-process history.
 
 The gateway fails closed unless `ASSISTANT_GATEWAY_TOKEN` or `--gateway-token`
 is set and supplied as a bearer token.
+
+## Family Deploy
+
+`assistant family-deploy` interactively configures and manages a fleet of
+containerized assistants: one per family member, plus any "freeloaders" you add.
+It prompts for how many family members there are, their names, and the
+freeloaders, then writes an `assistant.yaml` deployment file and drives Docker
+to bring up one container per person.
+
+Each member's container:
+
+- runs `assistant telegram` with the OpenAI OAuth provider, restricted to a
+  required allow list of Telegram users,
+- mounts the host Codex `auth.json` read-only at `/codex/auth.json`,
+- gets a persistent named Docker volume at `/state`, so durable memory and
+  scheduler data survive container restarts,
+- restarts automatically (`--restart unless-stopped`),
+- is individually configurable (Telegram bot token, allowed users/chats, model,
+  and extra environment variables) through `assistant.yaml`.
+
+```sh
+# Interactive: generate assistant.yaml and deploy
+assistant family-deploy
+
+# Regenerate the config only, without deploying
+assistant family-deploy init
+
+# Apply an existing/edited assistant.yaml
+assistant family-deploy up --file ./assistant.yaml
+
+# Inspect or tear down (named volumes are kept)
+assistant family-deploy status
+assistant family-deploy down
+```
+
+Preview the Docker commands without running them using `--dry-run`. Override the
+image with `--image` and the mounted Codex auth path with `--codex-auth`.
+
+The interactive flow asks how many family members there are, then for each
+member a name, a Telegram bot token, and a comma-separated allow list; it repeats
+the same prompts for freeloaders. Name, token, and allow list are all required.
+For example:
+
+```text
+How many family members? 1
+
+Family member #1
+  Name: Alice
+  Telegram bot token (from BotFather): 123456:alice-bot-token
+  Allowed Telegram user IDs/usernames (comma-separated): 123456789
+How many freeloaders? 1
+
+Freeloader #1
+  Name: Charlie
+  Telegram bot token (from BotFather): 234567:charlie-bot-token
+  Allowed Telegram user IDs/usernames (comma-separated): 234567890
+```
+
+Running from a source checkout (no installed binary), substitute
+`go run ./cmd/assistant` for `assistant`:
+
+```sh
+go run ./cmd/assistant family-deploy --dry-run
+```
+
+`go run` keeps the current working directory, so `assistant.yaml` is written to
+the directory you run it from unless you pass `--file`.
+
+`assistant.yaml`:
+
+```yaml
+image: ghcr.io/gratefulagents/assistant:latest
+provider: openai-oauth
+codexAuthPath: ~/.codex/auth.json
+restart: unless-stopped
+user: "0:0"
+members:
+  - name: Alice
+    role: family
+    container: assistant-family-alice
+    volume: assistant-family-alice-state
+    telegramBotToken: "123456:alice-bot-token"
+    telegramAllowedUsers: ["123456789"]
+    model: ""
+    env: {}
+  - name: Charlie
+    role: freeloader
+    container: assistant-freeloader-charlie
+    volume: assistant-freeloader-charlie-state
+    telegramBotToken: "234567:charlie-bot-token"
+    telegramAllowedUsers: ["234567890"]
+```
+
+`container` and `volume` are derived from the role and name when omitted.
+Containers run as `user: "0:0"` by default so the assistant can write to its
+named volume; override per deployment if your image runs as a non-root user that
+owns the volume. Each member needs their own Telegram bot token from
+[BotFather](https://core.telegram.org/bots/features#botfather) and at least one
+allowed Telegram user; both are required when configuring a member interactively
+and are validated when an edited `assistant.yaml` is loaded.

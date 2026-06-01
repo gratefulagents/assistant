@@ -353,6 +353,7 @@ examples:
   assistant gmail --provider openai-oauth --gmail-query "is:unread"
   assistant poll --provider openai-oauth
   assistant serve --provider openai-oauth --addr :8080
+  assistant family-deploy
   assistant --provider openai-api "what changed in this repo?"
   OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
 `)

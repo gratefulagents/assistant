@@ -18,6 +18,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, versionText())
 		return 0
 	}
+	if len(args) > 0 && args[0] == "family-deploy" {
+		return runFamilyDeploy(args[1:], stdin, stdout, stderr)
+	}
 	command := ""
 	if len(args) > 0 && isCommand(args[0]) {
 		command = args[0]

@@ -6,6 +6,7 @@ require (
 	github.com/gratefulagents/sdk v0.0.2
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/net v0.53.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,5 +30,4 @@ require (
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

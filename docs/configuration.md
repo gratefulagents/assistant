@@ -231,6 +231,10 @@ numeric Telegram user IDs over usernames. To discover IDs, start the poller,
 send one message, read the `telegram access denied` log line, then set the
 matching user or chat ID and restart.
 
+To run one Telegram bot per person across a household, see
+[Family Deploy](features.md#family-deploy), which provisions a container, a
+persistent volume, and a required bot token and allow list for each member.
+
 Gmail:
 
 ```text
