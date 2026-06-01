@@ -70,11 +70,12 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 	}
 	bundle.MCPConfig = mcpCfg
 	if cfg.EnableProjectState {
-		tools, err := durableMemoryTools(ctx, cfg)
+		store, err := newMemoryStore(cfg)
 		if err != nil {
 			return extensionBundle{}, err
 		}
-		bundle.ExtraTools = append(bundle.ExtraTools, tools...)
+		bundle.ExtraTools = append(bundle.ExtraTools, sdkprojectstatetools.Tools(store, "assistant")...)
+		bundle.MemoryPrime = primeMemory(ctx, store)
 	}
 	if cfg.EnableScheduling {
 		bundle.ExtraTools = append(bundle.ExtraTools, scheduleTools(cfg)...)
@@ -100,6 +101,16 @@ func durableMemoryTools(ctx context.Context, cfg appConfig) ([]agentsdk.Tool, er
 		return nil, ctx.Err()
 	default:
 	}
+	store, err := newMemoryStore(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return sdkprojectstatetools.Tools(store, "assistant"), nil
+}
+
+// newMemoryStore builds the durable memory store, attaching an embedder for
+// hybrid recall when one is configured.
+func newMemoryStore(cfg appConfig) (sdkprojectstate.Store, error) {
 	embedder, err := buildEmbedder(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("initialize memory embedder: %w", err)
@@ -114,7 +125,30 @@ func durableMemoryTools(ctx context.Context, cfg appConfig) ([]agentsdk.Tool, er
 	if err != nil {
 		return nil, fmt.Errorf("initialize durable memory: %w", err)
 	}
-	return sdkprojectstatetools.Tools(store, "assistant"), nil
+	return store, nil
+}
+
+// primeMemory builds a compact durable-context block to inject into the system
+// prompt. The bundle is rebuilt per run, so this re-primes on every turn and
+// stays fresh even in a long-running process: memories stored on one turn are
+// reflected in the next. The agent begins each run already aware of pinned
+// memories and active tasks instead of depending on it to call prime_context.
+// It returns an empty string when there is nothing durable to surface or when
+// priming fails, so memory bootstrap never blocks a run.
+func primeMemory(ctx context.Context, store sdkprojectstate.Store) string {
+	text, err := store.PrimeContext(ctx, sdkprojectstate.PrimeOptions{Actor: "assistant"})
+	if err != nil {
+		return ""
+	}
+	text = strings.TrimSpace(text)
+	// PrimeContext always emits a "## Durable Project State" header with
+	// Project/Workspace lines. Actual content lives under "### " sections
+	// (tasks, pinned/recent memories). With no sections there is nothing
+	// worth injecting, so skip it to avoid wasting tokens.
+	if text == "" || strings.Contains(text, "No durable tasks or memories yet") || !strings.Contains(text, "### ") {
+		return ""
+	}
+	return text
 }
 
 // buildEmbedder returns an OpenAI-compatible embedder for hybrid memory recall,

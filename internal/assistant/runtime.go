@@ -16,8 +16,9 @@ import (
 )
 
 type extensionBundle struct {
-	MCPConfig  *sdkmcp.Config
-	ExtraTools []agentsdk.Tool
+	MCPConfig   *sdkmcp.Config
+	ExtraTools  []agentsdk.Tool
+	MemoryPrime string
 }
 
 func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *auditRecorder) (*sdkruntime.Bundle, error) {
@@ -58,7 +59,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		APIMode:                 cfg.APIMode,
 		WorkDir:                 cfg.WorkDir,
 		AgentName:               "assistant",
-		Instructions:            defaultInstructions(),
+		Instructions:            instructionsWithMemory(extensions.MemoryPrime),
 		SessionMode:             sessionMode,
 		ActiveMode:              activeMode,
 		ActivePhase:             activePhase,
@@ -129,6 +130,22 @@ func defaultInstructions() string {
 		"Use skill_search and skill_install when the user needs a new integration. Installed skills become MCP servers through .mcp.json and are available on the next turn.",
 		"Ask before externally visible, destructive, expensive, or security-sensitive actions.",
 	}, " ")
+}
+
+// instructionsWithMemory appends a primed durable-memory block to the base
+// instructions so the agent starts each run already aware of pinned memories
+// and active tasks, without depending on it to call prime_context. When there
+// is nothing durable to surface, the base instructions are returned unchanged.
+func instructionsWithMemory(prime string) string {
+	prime = strings.TrimSpace(prime)
+	if prime == "" {
+		return defaultInstructions()
+	}
+	return strings.Join([]string{
+		defaultInstructions(),
+		"The following durable project state was loaded for this run. Treat it as known background and prefer it over re-deriving facts; call memory_recall for anything not covered here.",
+		prime,
+	}, "\n\n")
 }
 
 func modelDrivenMemoryInstructions() string {

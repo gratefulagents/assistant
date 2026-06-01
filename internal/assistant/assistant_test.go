@@ -16,6 +16,7 @@ import (
 
 	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	sdkmcp "github.com/gratefulagents/sdk/pkg/agentsdk/mcp"
+	sdkprojectstate "github.com/gratefulagents/sdk/pkg/agentsdk/projectstate"
 	sdkopenai "github.com/gratefulagents/sdk/pkg/agentsdk/providers/openai"
 )
 
@@ -208,6 +209,43 @@ func TestDurableMemoryToolsBuildWithEmbedder(t *testing.T) {
 	}
 	if len(tools) == 0 {
 		t.Fatal("durableMemoryTools returned no tools")
+	}
+}
+
+func TestPrimeMemoryEmptyWhenNothingStored(t *testing.T) {
+	store, err := newMemoryStore(appConfig{StateDir: filepath.Join(t.TempDir(), "state"), WorkDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := primeMemory(context.Background(), store); got != "" {
+		t.Fatalf("primeMemory with empty store = %q, want empty", got)
+	}
+	if instr := instructionsWithMemory(""); instr != defaultInstructions() {
+		t.Fatal("instructionsWithMemory(empty) should equal defaultInstructions()")
+	}
+}
+
+func TestPrimeMemoryInjectsStoredMemory(t *testing.T) {
+	ctx := context.Background()
+	cfg := appConfig{StateDir: filepath.Join(t.TempDir(), "state"), WorkDir: t.TempDir()}
+	store, err := newMemoryStore(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertMemory(ctx, sdkprojectstate.UpsertMemoryInput{
+		Kind:    sdkprojectstate.MemoryKindPinned,
+		Scope:   sdkprojectstate.MemoryScopeUser,
+		Content: "Allergic to shellfish.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prime := primeMemory(ctx, store)
+	if !strings.Contains(prime, "Allergic to shellfish.") {
+		t.Fatalf("primeMemory = %q, want it to contain the pinned memory", prime)
+	}
+	instr := instructionsWithMemory(prime)
+	if !strings.Contains(instr, "Allergic to shellfish.") || !strings.Contains(instr, "loaded for this run") {
+		t.Fatalf("instructionsWithMemory did not inject primed memory:\n%s", instr)
 	}
 }
 
