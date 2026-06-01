@@ -35,6 +35,11 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdo
 	if command := handleSlashCommand(text, session, false); command.Handled {
 		return command.Reply, nil
 	}
+	prompt := inboundPrompt(msg, text)
+	return runPromptTextWithSession(ctx, cfg, prompt, stdout, stderr, session)
+}
+
+func inboundPrompt(msg inboundMessage, text string) string {
 	prompt := "Incoming " + msg.Channel + " message"
 	if msg.UserID != "" {
 		prompt += " from " + msg.UserID
@@ -44,10 +49,13 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdo
 	}
 	prompt += "."
 	if strings.EqualFold(msg.Channel, "telegram") {
+		if msg.Thread != "" {
+			prompt += "\n\nTelegram chat_id for this conversation: " + msg.Thread + ". Use this value as deliver.chat_id when creating schedules that should send completed output back to this chat."
+		}
 		prompt += "\n\n" + telegramReplyFormattingInstructions()
 	}
 	prompt += "\n\nMessage:\n\n" + text
-	return runPromptTextWithSession(ctx, cfg, prompt, stdout, stderr, session)
+	return prompt
 }
 
 func runPromptText(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer) (string, error) {

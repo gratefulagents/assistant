@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,42 +30,50 @@ type scheduleState struct {
 }
 
 type scheduleEntry struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name,omitempty"`
-	Prompt       string    `json:"prompt"`
-	Cron         string    `json:"cron,omitempty"`
-	EverySeconds int       `json:"everySeconds,omitempty"`
-	RunAt        string    `json:"runAt,omitempty"`
-	Timezone     string    `json:"timezone,omitempty"`
-	Enabled      bool      `json:"enabled"`
-	NextRun      time.Time `json:"nextRun,omitempty"`
-	LastRun      time.Time `json:"lastRun,omitempty"`
-	LastError    string    `json:"lastError,omitempty"`
-	LastOutput   string    `json:"lastOutput,omitempty"`
-	RunCount     int       `json:"runCount,omitempty"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name,omitempty"`
+	Prompt       string            `json:"prompt"`
+	Cron         string            `json:"cron,omitempty"`
+	EverySeconds int               `json:"everySeconds,omitempty"`
+	RunAt        string            `json:"runAt,omitempty"`
+	Timezone     string            `json:"timezone,omitempty"`
+	Deliver      *scheduleDelivery `json:"deliver,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	NextRun      time.Time         `json:"nextRun,omitempty"`
+	LastRun      time.Time         `json:"lastRun,omitempty"`
+	LastError    string            `json:"lastError,omitempty"`
+	LastOutput   string            `json:"lastOutput,omitempty"`
+	RunCount     int               `json:"runCount,omitempty"`
+	CreatedAt    time.Time         `json:"createdAt"`
+	UpdatedAt    time.Time         `json:"updatedAt"`
+}
+
+type scheduleDelivery struct {
+	Channel string `json:"channel,omitempty"`
+	ChatID  string `json:"chat_id,omitempty"`
 }
 
 type scheduleCreateInput struct {
-	Name         string `json:"name"`
-	Prompt       string `json:"prompt"`
-	Cron         string `json:"cron"`
-	EverySeconds int    `json:"every_seconds"`
-	RunAt        string `json:"run_at"`
-	Timezone     string `json:"timezone"`
-	Enabled      *bool  `json:"enabled"`
+	Name         string            `json:"name"`
+	Prompt       string            `json:"prompt"`
+	Cron         string            `json:"cron"`
+	EverySeconds int               `json:"every_seconds"`
+	RunAt        string            `json:"run_at"`
+	Timezone     string            `json:"timezone"`
+	Deliver      *scheduleDelivery `json:"deliver"`
+	Enabled      *bool             `json:"enabled"`
 }
 
 type scheduleUpdateInput struct {
-	ID           string  `json:"id"`
-	Name         *string `json:"name"`
-	Prompt       *string `json:"prompt"`
-	Cron         *string `json:"cron"`
-	EverySeconds *int    `json:"every_seconds"`
-	RunAt        *string `json:"run_at"`
-	Timezone     *string `json:"timezone"`
-	Enabled      *bool   `json:"enabled"`
+	ID           string            `json:"id"`
+	Name         *string           `json:"name"`
+	Prompt       *string           `json:"prompt"`
+	Cron         *string           `json:"cron"`
+	EverySeconds *int              `json:"every_seconds"`
+	RunAt        *string           `json:"run_at"`
+	Timezone     *string           `json:"timezone"`
+	Deliver      *scheduleDelivery `json:"deliver"`
+	Enabled      *bool             `json:"enabled"`
 }
 
 type scheduleRunInput struct {
@@ -116,8 +125,13 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 			fmt.Fprintf(stderr, "assistant schedule %s failed: %v\n", label, runErr)
 			continue
 		}
-		if err := finishScheduleRun(cfg, entry.ID, reply, nil); err != nil {
+		deliveryErr := deliverScheduleOutput(ctx, cfg, entry, reply)
+		if err := finishScheduleRun(cfg, entry.ID, reply, deliveryErr); err != nil {
 			return err
+		}
+		if deliveryErr != nil {
+			fmt.Fprintf(stderr, "assistant schedule %s delivery failed: %v\n", label, deliveryErr)
+			continue
 		}
 		fmt.Fprintf(stdout, "\n[schedule %s]\n%s\n", label, reply)
 	}
@@ -134,13 +148,20 @@ func runScheduleNow(ctx context.Context, cfg appConfig, in scheduleRunInput, std
 		fmt.Fprintf(stderr, "assistant schedule %s running manually\n", label)
 	}
 	reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry), stdout, stderr)
-	finished, finishErr := finishScheduleRunEntry(cfg, entry.ID, reply, runErr)
+	deliveryErr := error(nil)
+	if runErr == nil {
+		deliveryErr = deliverScheduleOutput(ctx, cfg, entry, reply)
+	}
+	finished, finishErr := finishScheduleRunEntry(cfg, entry.ID, reply, firstScheduleRunError(runErr, deliveryErr))
 	if finishErr != nil {
 		return scheduleRunResult{}, finishErr
 	}
 	result := scheduleRunResult{Schedule: finished}
 	if runErr != nil {
 		return result, runErr
+	}
+	if deliveryErr != nil {
+		return result, deliveryErr
 	}
 	result.Output = reply
 	return result, nil
@@ -177,6 +198,7 @@ func createSchedule(cfg appConfig, in scheduleCreateInput) (scheduleEntry, error
 		EverySeconds: in.EverySeconds,
 		RunAt:        strings.TrimSpace(in.RunAt),
 		Timezone:     strings.TrimSpace(in.Timezone),
+		Deliver:      normalizeScheduleDelivery(in.Deliver),
 		Enabled:      enabled,
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -269,6 +291,9 @@ func updateSchedule(cfg appConfig, in scheduleUpdateInput) (scheduleEntry, error
 		}
 		if in.Timezone != nil {
 			entry.Timezone = strings.TrimSpace(*in.Timezone)
+		}
+		if in.Deliver != nil {
+			entry.Deliver = normalizeScheduleDelivery(in.Deliver)
 		}
 		if in.Cron != nil {
 			entry.Cron = strings.TrimSpace(*in.Cron)
@@ -414,12 +439,15 @@ func finishScheduleRunEntry(cfg appConfig, id string, output string, runErr erro
 			continue
 		}
 		state.Schedules[i].UpdatedAt = now
+		if strings.TrimSpace(output) != "" {
+			state.Schedules[i].LastOutput = truncateScheduleOutput(output)
+		} else {
+			state.Schedules[i].LastOutput = ""
+		}
 		if runErr != nil {
 			state.Schedules[i].LastError = runErr.Error()
-			state.Schedules[i].LastOutput = ""
 		} else {
 			state.Schedules[i].LastError = ""
-			state.Schedules[i].LastOutput = truncateScheduleOutput(output)
 		}
 		entry := state.Schedules[i]
 		if err := writeScheduleStateLocked(cfg, state); err != nil {
@@ -487,6 +515,15 @@ func claimManualScheduleRun(cfg appConfig, in scheduleRunInput, now time.Time) (
 	return entry, nil
 }
 
+func firstScheduleRunError(errs ...error) error {
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func hasConfiguredSchedules(cfg appConfig) (bool, error) {
 	schedules, err := listSchedules(cfg)
 	if err != nil {
@@ -520,6 +557,9 @@ func validateSchedule(entry scheduleEntry) error {
 	if _, err := scheduleLocation(entry.Timezone); err != nil {
 		return err
 	}
+	if err := validateScheduleDelivery(entry.Deliver); err != nil {
+		return err
+	}
 	if strings.TrimSpace(entry.Cron) != "" {
 		if _, err := parseCronSchedule(entry.Cron); err != nil {
 			return err
@@ -534,6 +574,70 @@ func validateSchedule(entry scheduleEntry) error {
 		}
 	}
 	return nil
+}
+
+func normalizeScheduleDelivery(delivery *scheduleDelivery) *scheduleDelivery {
+	if delivery == nil {
+		return nil
+	}
+	out := scheduleDelivery{
+		Channel: strings.ToLower(strings.TrimSpace(delivery.Channel)),
+		ChatID:  strings.TrimSpace(delivery.ChatID),
+	}
+	if out.Channel == "" && out.ChatID != "" {
+		out.Channel = "telegram"
+	}
+	if out.Channel == "" && out.ChatID == "" {
+		return nil
+	}
+	return &out
+}
+
+func validateScheduleDelivery(delivery *scheduleDelivery) error {
+	if delivery == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(delivery.Channel)) {
+	case "telegram":
+		if _, err := parseScheduleTelegramChatID(delivery.ChatID); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported delivery channel %q", delivery.Channel)
+	}
+}
+
+func deliverScheduleOutput(ctx context.Context, cfg appConfig, entry scheduleEntry, output string) error {
+	if entry.Deliver == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(entry.Deliver.Channel)) {
+	case "telegram":
+		token := strings.TrimSpace(cfg.TelegramBotToken)
+		if token == "" {
+			return errors.New("telegram delivery requires --telegram-bot-token or ASSISTANT_TELEGRAM_BOT_TOKEN")
+		}
+		chatID, err := parseScheduleTelegramChatID(entry.Deliver.ChatID)
+		if err != nil {
+			return err
+		}
+		return postTelegramMessage(ctx, token, chatID, output)
+	default:
+		return fmt.Errorf("unsupported delivery channel %q", entry.Deliver.Channel)
+	}
+}
+
+func parseScheduleTelegramChatID(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, errors.New("telegram delivery requires chat_id")
+	}
+	chatID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || chatID == 0 {
+		return 0, fmt.Errorf("telegram delivery chat_id must be a non-zero integer")
+	}
+	return chatID, nil
 }
 
 func nextScheduleRun(entry scheduleEntry, after time.Time) (time.Time, error) {

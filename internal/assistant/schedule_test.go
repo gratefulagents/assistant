@@ -148,6 +148,70 @@ func TestScheduleManualRunDisabledRequiresOptIn(t *testing.T) {
 	}
 }
 
+func TestScheduleDeliveryConfig(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.StateDir = filepath.Join(t.TempDir(), "state")
+
+	created, err := createSchedule(cfg, scheduleCreateInput{
+		Name:         "weather",
+		Prompt:       "weather report",
+		EverySeconds: 3600,
+		Deliver:      &scheduleDelivery{ChatID: "-1001234567890"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Deliver == nil {
+		t.Fatalf("created delivery = nil")
+	}
+	if got, want := created.Deliver.Channel, "telegram"; got != want {
+		t.Fatalf("delivery channel = %q, want %q", got, want)
+	}
+	if got, want := created.Deliver.ChatID, "-1001234567890"; got != want {
+		t.Fatalf("delivery chat_id = %q, want %q", got, want)
+	}
+
+	updated, err := updateSchedule(cfg, scheduleUpdateInput{
+		ID:      created.ID,
+		Deliver: &scheduleDelivery{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Deliver != nil {
+		t.Fatalf("updated delivery = %#v, want nil", updated.Deliver)
+	}
+}
+
+func TestScheduleDeliveryRequiresTelegramToken(t *testing.T) {
+	entry := scheduleEntry{
+		Deliver: &scheduleDelivery{Channel: "telegram", ChatID: "123"},
+	}
+	if err := deliverScheduleOutput(t.Context(), appConfig{}, entry, "weather"); err == nil {
+		t.Fatal("expected telegram delivery without token to fail")
+	}
+}
+
+func TestScheduleDeliveryValidation(t *testing.T) {
+	tests := []scheduleDelivery{
+		{Channel: "email", ChatID: "123"},
+		{Channel: "telegram", ChatID: ""},
+		{Channel: "telegram", ChatID: "abc"},
+		{Channel: "telegram", ChatID: "0"},
+	}
+	for _, delivery := range tests {
+		entry := scheduleEntry{
+			Prompt:       "weather",
+			EverySeconds: 3600,
+			Deliver:      &delivery,
+		}
+		if err := validateSchedule(entry); err == nil {
+			t.Fatalf("expected invalid delivery %#v to fail", delivery)
+		}
+	}
+}
+
 func TestScheduleToolsExposedWhenEnabled(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.ConfigPath = ""

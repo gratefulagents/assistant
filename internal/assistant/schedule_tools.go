@@ -47,6 +47,14 @@ func (t *scheduleCreateTool) InputSchema() json.RawMessage {
 			"every_seconds": {"type": "integer", "minimum": 10, "description": "Fixed interval in seconds."},
 			"run_at": {"type": "string", "description": "One-time run time as RFC3339 or 'YYYY-MM-DD HH:MM'."},
 			"timezone": {"type": "string", "description": "IANA timezone, e.g. 'America/New_York'. Defaults to local time."},
+			"deliver": {
+				"type": "object",
+				"description": "Optional delivery target for the completed schedule output.",
+				"properties": {
+					"channel": {"type": "string", "enum": ["telegram"]},
+					"chat_id": {"type": "string", "description": "Numeric Telegram chat id to receive the schedule output."}
+				}
+			},
 			"enabled": {"type": "boolean"}
 		},
 		"required": ["prompt"]
@@ -141,6 +149,14 @@ func (t *scheduleUpdateTool) InputSchema() json.RawMessage {
 			"every_seconds": {"type": "integer", "minimum": 10},
 			"run_at": {"type": "string"},
 			"timezone": {"type": "string"},
+			"deliver": {
+				"type": "object",
+				"description": "Optional delivery target for the completed schedule output. Use an empty object to clear delivery.",
+				"properties": {
+					"channel": {"type": "string", "enum": ["telegram"]},
+					"chat_id": {"type": "string", "description": "Numeric Telegram chat id to receive the schedule output."}
+				}
+			},
 			"enabled": {"type": "boolean"}
 		},
 		"required": ["id"]

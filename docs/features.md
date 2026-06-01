@@ -138,6 +138,22 @@ run_at         one-time RFC3339 or YYYY-MM-DD HH:MM timestamp
 timezone       optional IANA timezone such as America/New_York
 ```
 
+Schedules can deliver completed output to Telegram when the process has a
+Telegram bot token. For example, a daily weather report can store:
+
+```json
+{
+  "name": "daily weather",
+  "prompt": "Write a concise daily weather report for Auroville.",
+  "cron": "0 7 * * *",
+  "timezone": "Asia/Kolkata",
+  "deliver": {
+    "channel": "telegram",
+    "chat_id": "123456789"
+  }
+}
+```
+
 Run only the scheduler:
 
 ```sh

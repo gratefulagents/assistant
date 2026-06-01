@@ -39,6 +39,19 @@ func TestConversationKeyPrefersThreadThenUser(t *testing.T) {
 	}
 }
 
+func TestTelegramInboundPromptIncludesChatIDForScheduleDelivery(t *testing.T) {
+	prompt := inboundPrompt(inboundMessage{
+		Channel: "telegram",
+		UserID:  "alice",
+		Thread:  "12345",
+	}, "send me weather every morning")
+	for _, want := range []string{"Telegram chat_id for this conversation: 12345", "deliver.chat_id"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt missing %q in %q", want, prompt)
+		}
+	}
+}
+
 func TestSlashCommandsUpdateSessionWithoutModelRun(t *testing.T) {
 	store := newConversationStore()
 	msg := inboundMessage{Channel: "generic", UserID: "alice", Text: "/plan"}
