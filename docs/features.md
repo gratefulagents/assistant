@@ -405,7 +405,10 @@ assistant family-deploy down
 ```
 
 Preview the Docker commands without running them using `--dry-run`. Override the
-image with `--image` and the mounted Codex auth path with `--codex-auth`.
+image repository with `--image`, the image tag with `--version`, and the mounted
+Codex auth path with `--codex-auth`. By default, generated family configs use
+the running assistant release version as the image tag; development builds fall
+back to `latest`.
 
 The interactive flow asks how many family members there are, then for each
 member a name, a Telegram bot token, and a comma-separated allow list; it repeats
@@ -440,7 +443,8 @@ the directory you run it from unless you pass `--file`.
 `assistant.yaml`:
 
 ```yaml
-image: ghcr.io/gratefulagents/assistant:latest
+image: ghcr.io/gratefulagents/assistant
+version: latest
 provider: openai-oauth
 codexAuthPath: ~/.codex/auth.json
 restart: unless-stopped

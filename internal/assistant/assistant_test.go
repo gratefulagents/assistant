@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -248,6 +249,34 @@ func TestRefreshOAuthAuthFileWritesSerializedToken(t *testing.T) {
 	}
 	if got := info.Mode().Perm(); got != 0o600 {
 		t.Fatalf("auth file mode = %v, want 0600", got)
+	}
+}
+
+func TestWriteFileAtomicFallsBackInPlaceWhenRenameBusy(t *testing.T) {
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(authPath, []byte("old\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	err := writeFileAtomicWithRename(authPath, []byte("new"), 0o600, func(_, _ string) error {
+		return &os.PathError{Op: "rename", Path: authPath, Err: syscall.EBUSY}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(data), "new\n"; got != want {
+		t.Fatalf("auth file = %q, want %q", got, want)
+	}
+	info, err := os.Stat(authPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o640 {
+		t.Fatalf("auth file mode = %v, want 0640", got)
 	}
 }
 

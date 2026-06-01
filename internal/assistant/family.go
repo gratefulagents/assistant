@@ -22,10 +22,12 @@ const (
 	familyRoleFamily     = "family"
 	familyRoleFreeloader = "freeloader"
 
-	defaultFamilyImage      = "ghcr.io/gratefulagents/assistant:latest"
-	defaultFamilyConfigPath = "assistant.yaml"
-	defaultFamilyRestart    = "unless-stopped"
-	defaultFamilyRefresher  = "assistant-oauth-refresher"
+	defaultFamilyImageRepository = "ghcr.io/gratefulagents/assistant"
+	defaultFamilyImageVersion    = "latest"
+	defaultFamilyImage           = defaultFamilyImageRepository + ":" + defaultFamilyImageVersion
+	defaultFamilyConfigPath      = "assistant.yaml"
+	defaultFamilyRestart         = "unless-stopped"
+	defaultFamilyRefresher       = "assistant-oauth-refresher"
 	// defaultFamilyUser runs each container as root so the assistant can write
 	// to its named state volume (a distroless nonroot user cannot), which is
 	// what keeps a member's durable data intact across container restarts.
@@ -39,6 +41,7 @@ const (
 // and is the single source of truth for managing the per-member containers.
 type familyConfig struct {
 	Image         string            `yaml:"image"`
+	Version       string            `yaml:"version,omitempty"`
 	Provider      string            `yaml:"provider"`
 	CodexAuthPath string            `yaml:"codexAuthPath"`
 	Restart       string            `yaml:"restart"`
@@ -115,6 +118,7 @@ func runFamilyDeploy(args []string, stdin io.Reader, stdout, stderr io.Writer) i
 	configPath := fs.String("file", defaultFamilyConfigPath, "assistant.yaml deployment config path")
 	fs.StringVar(configPath, "f", defaultFamilyConfigPath, "assistant.yaml deployment config path (shorthand)")
 	image := fs.String("image", "", "container image override for generated config")
+	version := fs.String("version", "", "container image version/tag for generated config")
 	codexAuth := fs.String("codex-auth", "", "host Codex OAuth auth.json path to mount into containers")
 	assumeYes := fs.Bool("yes", false, "do not prompt; require an existing config")
 	dryRun := fs.Bool("dry-run", false, "print docker commands without executing them")
@@ -140,13 +144,13 @@ func runFamilyDeploy(args []string, stdin io.Reader, stdout, stderr io.Writer) i
 		fmt.Fprintln(stdout, familyUsage())
 		return 0
 	case "init":
-		if _, err := familyInit(path, *image, *codexAuth, stdin, stdout); err != nil {
+		if _, err := familyInit(path, *image, *version, *codexAuth, stdin, stdout); err != nil {
 			fmt.Fprintln(stderr, "family-deploy:", err)
 			return 1
 		}
 		return 0
 	case "up", "deploy":
-		cfg, err := familyEnsureConfig(path, *image, *codexAuth, *assumeYes, stdin, stdout)
+		cfg, err := familyEnsureConfig(path, *image, *version, *codexAuth, *assumeYes, stdin, stdout)
 		if err != nil {
 			fmt.Fprintln(stderr, "family-deploy:", err)
 			return 1
@@ -186,7 +190,7 @@ func runFamilyDeploy(args []string, stdin io.Reader, stdout, stderr io.Writer) i
 
 // familyEnsureConfig loads assistant.yaml when present, otherwise builds one
 // interactively (unless --yes was given, where a config is required).
-func familyEnsureConfig(path, image, codexAuth string, assumeYes bool, stdin io.Reader, stdout io.Writer) (familyConfig, error) {
+func familyEnsureConfig(path, image, version, codexAuth string, assumeYes bool, stdin io.Reader, stdout io.Writer) (familyConfig, error) {
 	if _, err := os.Stat(path); err == nil {
 		return loadFamilyConfig(path)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -195,19 +199,22 @@ func familyEnsureConfig(path, image, codexAuth string, assumeYes bool, stdin io.
 	if assumeYes {
 		return familyConfig{}, fmt.Errorf("config %s not found and --yes was set; run `assistant family-deploy init` first", path)
 	}
-	return familyInit(path, image, codexAuth, stdin, stdout)
+	return familyInit(path, image, version, codexAuth, stdin, stdout)
 }
 
 // familyInit interactively collects family members and freeloaders, then writes
 // assistant.yaml to disk.
-func familyInit(path, image, codexAuth string, stdin io.Reader, stdout io.Writer) (familyConfig, error) {
+func familyInit(path, image, version, codexAuth string, stdin io.Reader, stdout io.Writer) (familyConfig, error) {
 	reader := bufio.NewReader(stdin)
 	fmt.Fprintln(stdout, "Configuring the family assistant deployment.")
 	fmt.Fprintln(stdout, "Each member gets their own container, persistent volume, and Telegram bot.")
 	fmt.Fprintln(stdout)
 
+	image = strings.TrimSpace(image)
+	imageRef := firstNonEmpty(image, defaultFamilyImageRepository)
 	cfg := familyConfig{
-		Image:         firstNonEmpty(image, defaultFamilyImage),
+		Image:         imageRef,
+		Version:       effectiveFamilyVersion(imageRef, version),
 		Provider:      providerOpenAIOAuth,
 		CodexAuthPath: firstNonEmpty(codexAuth, defaultOAuthPath()),
 		Restart:       defaultFamilyRestart,
@@ -417,7 +424,9 @@ func saveFamilyConfig(path string, cfg familyConfig) error {
 }
 
 func (c *familyConfig) applyDefaults() {
-	c.Image = firstNonEmpty(c.Image, defaultFamilyImage)
+	rawImage := strings.TrimSpace(c.Image)
+	c.Version = effectiveFamilyVersion(rawImage, c.Version)
+	c.Image = familyImageFromConfig(rawImage, c.Version)
 	c.Provider = firstNonEmpty(normalizeProvider(c.Provider), providerOpenAIOAuth)
 	c.CodexAuthPath = firstNonEmpty(c.CodexAuthPath, defaultOAuthPath())
 	c.Restart = firstNonEmpty(c.Restart, defaultFamilyRestart)
@@ -444,6 +453,72 @@ func (c *familyConfig) applyDefaults() {
 			m.Volume = m.Container + "-state"
 		}
 	}
+}
+
+func defaultFamilyVersion() string {
+	version := strings.TrimSpace(currentBuildDetails().Version)
+	switch version {
+	case "", "dev", "(devel)":
+		return defaultFamilyImageVersion
+	default:
+		return version
+	}
+}
+
+func effectiveFamilyVersion(image, version string) string {
+	version = strings.TrimSpace(version)
+	if version != "" {
+		return version
+	}
+	image = strings.TrimSpace(image)
+	if image == "" || image == defaultFamilyImage || !hasImageTagOrDigest(image) {
+		return defaultFamilyVersion()
+	}
+	return ""
+}
+
+func familyImageFromConfig(image, version string) string {
+	image = strings.TrimSpace(image)
+	version = strings.TrimSpace(version)
+	if image == "" {
+		image = defaultFamilyImageRepository
+	}
+	if version != "" {
+		if strings.Contains(image, "@") {
+			return image
+		}
+		return stripImageTag(image) + ":" + version
+	}
+	if !hasImageTagOrDigest(image) {
+		return image + ":" + defaultFamilyVersion()
+	}
+	return image
+}
+
+func hasImageTagOrDigest(image string) bool {
+	image = strings.TrimSpace(image)
+	if strings.Contains(image, "@") {
+		return true
+	}
+	lastSlash := strings.LastIndex(image, "/")
+	name := image
+	if lastSlash >= 0 {
+		name = image[lastSlash+1:]
+	}
+	return strings.Contains(name, ":")
+}
+
+func stripImageTag(image string) string {
+	image = strings.TrimSpace(image)
+	lastSlash := strings.LastIndex(image, "/")
+	name := image
+	if lastSlash >= 0 {
+		name = image[lastSlash+1:]
+	}
+	if colon := strings.LastIndex(name, ":"); colon >= 0 {
+		return image[:lastSlash+1] + name[:colon]
+	}
+	return image
 }
 
 func (c familyConfig) validate() error {
@@ -828,6 +903,7 @@ actions:
 flags:
   -f, --file PATH   assistant.yaml path (default ./assistant.yaml)
   --image REF       container image for the generated config
+  --version TAG     container image version/tag for the generated config
   --codex-auth PATH host Codex auth.json to mount (default ~/.codex/auth.json)
   --yes             do not prompt; require an existing assistant.yaml
   --dry-run         print docker commands without executing them

@@ -56,6 +56,46 @@ func TestFamilyConfigApplyDefaults(t *testing.T) {
 	}
 }
 
+func TestFamilyConfigUsesBuildVersionForDefaultImage(t *testing.T) {
+	oldVersion := buildVersion
+	buildVersion = "v1.2.3"
+	t.Cleanup(func() { buildVersion = oldVersion })
+
+	cfg := familyConfig{
+		Image: defaultFamilyImage,
+		Members: []familyMember{{
+			Name:                 "Alice",
+			TelegramBotToken:     "1:a",
+			TelegramAllowedUsers: []string{"111"},
+		}},
+	}
+	cfg.applyDefaults()
+
+	if got, want := cfg.Version, "v1.2.3"; got != want {
+		t.Errorf("version = %q, want %q", got, want)
+	}
+	if got, want := cfg.Image, "ghcr.io/gratefulagents/assistant:v1.2.3"; got != want {
+		t.Errorf("image = %q, want %q", got, want)
+	}
+}
+
+func TestFamilyConfigVersionOverridesImageTag(t *testing.T) {
+	cfg := familyConfig{
+		Image:   "ghcr.io/example/assistant:old",
+		Version: "v2.0.0",
+		Members: []familyMember{{
+			Name:                 "Alice",
+			TelegramBotToken:     "1:a",
+			TelegramAllowedUsers: []string{"111"},
+		}},
+	}
+	cfg.applyDefaults()
+
+	if got, want := cfg.Image, "ghcr.io/example/assistant:v2.0.0"; got != want {
+		t.Errorf("image = %q, want %q", got, want)
+	}
+}
+
 func TestFamilyRefresherRunArgs(t *testing.T) {
 	cfg := familyConfig{
 		Image:    "ghcr.io/example/assistant:1.2.3",
