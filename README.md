@@ -180,6 +180,8 @@ standalone scheduler process.
 --skill-catalog     optional custom skill catalog JSON
 --scheduling        enable durable schedule tools and the background scheduler
 --project-state     enable durable assistant memory/tasks
+--embedding-model   embedding model for hybrid memory recall; empty = lexical
+--embedding-base-url  OpenAI-compatible embeddings base URL
 --state-dir         filesystem state directory
 --guardrails        enable SDK guardrails
 --compaction        enable SDK context compaction
@@ -191,6 +193,8 @@ standalone scheduler process.
 By default, Assistant enables SDK tools, guardrails, compaction, approvals, and
 model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
 MCP and skill catalog tools are opt-in with `--mcp` and `--skills`.
+Durable memory recall is lexical by default; set `--embedding-model` (or
+`ASSISTANT_EMBEDDING_MODEL`) to enable embeddings-backed hybrid semantic recall.
 Audit output is opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes
 structured events to stdout, standard logs, and
 `~/.gratefulagents/assistant/state/audit.ndjson` by default. Use

@@ -148,6 +148,7 @@ func featureSummary(cfg appConfig, extensions extensionBundle) string {
 		"skills=" + onOff(cfg.EnableSkills),
 		"scheduling=" + onOff(cfg.EnableScheduling),
 		"project_state=" + onOff(cfg.EnableProjectState),
+		"embeddings=" + onOff(strings.TrimSpace(cfg.EmbeddingModel) != ""),
 		"mcp_servers=" + itoa(lenMCPServers(extensions.MCPConfig)),
 		"extra_tools=" + itoa(len(extensions.ExtraTools)),
 	}, ", ")

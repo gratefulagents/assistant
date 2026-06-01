@@ -3,6 +3,7 @@
 package assistant
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -164,6 +165,49 @@ func TestDefaultExtensionsAreOptIn(t *testing.T) {
 	}
 	if cfg.EnableSkills {
 		t.Fatal("EnableSkills default = true, want false")
+	}
+}
+
+func TestBuildEmbedderDisabledByDefault(t *testing.T) {
+	embedder, err := buildEmbedder(appConfig{})
+	if err != nil {
+		t.Fatalf("buildEmbedder error = %v", err)
+	}
+	if embedder != nil {
+		t.Fatal("buildEmbedder with no model = non-nil, want nil (lexical-only)")
+	}
+}
+
+func TestBuildEmbedderEnabledWithModel(t *testing.T) {
+	embedder, err := buildEmbedder(appConfig{
+		EmbeddingModel:   "text-embedding-3-small",
+		EmbeddingBaseURL: "http://localhost:11434/v1",
+		EmbeddingAPIKey:  "sk-test",
+	})
+	if err != nil {
+		t.Fatalf("buildEmbedder error = %v", err)
+	}
+	if embedder == nil {
+		t.Fatal("buildEmbedder with model = nil, want embedder")
+	}
+	if embedder.Model() != "text-embedding-3-small" {
+		t.Fatalf("embedder model = %q, want text-embedding-3-small", embedder.Model())
+	}
+}
+
+func TestDurableMemoryToolsBuildWithEmbedder(t *testing.T) {
+	cfg := appConfig{
+		StateDir:        filepath.Join(t.TempDir(), "state"),
+		WorkDir:         t.TempDir(),
+		EmbeddingModel:  "text-embedding-3-small",
+		EmbeddingAPIKey: "sk-test",
+	}
+	tools, err := durableMemoryTools(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("durableMemoryTools error = %v", err)
+	}
+	if len(tools) == 0 {
+		t.Fatal("durableMemoryTools returned no tools")
 	}
 }
 

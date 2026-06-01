@@ -26,6 +26,10 @@ type appConfig struct {
 	OpenAIAccountIDPath  string
 	WorkDir              string
 	StateDir             string
+	EmbeddingModel       string
+	EmbeddingBaseURL     string
+	EmbeddingAPIKey      string
+	EmbeddingDimensions  int
 	ConfigPath           string
 	MCPConfigPaths       stringListFlag
 	SkillCatalogPath     string
@@ -98,6 +102,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.BoolVar(&cfg.EnableSkills, "skills", cfg.EnableSkills, "enable SDK skill discovery/install tools")
 	fs.BoolVar(&cfg.EnableScheduling, "scheduling", cfg.EnableScheduling, "enable schedule tools and background scheduler")
 	fs.BoolVar(&cfg.EnableProjectState, "project-state", cfg.EnableProjectState, "enable durable memory and task tools")
+	fs.StringVar(&cfg.EmbeddingModel, "embedding-model", cfg.EmbeddingModel, "embedding model for hybrid memory recall; empty disables embeddings (lexical only)")
+	fs.StringVar(&cfg.EmbeddingBaseURL, "embedding-base-url", cfg.EmbeddingBaseURL, "OpenAI-compatible embeddings base URL")
+	fs.IntVar(&cfg.EmbeddingDimensions, "embedding-dimensions", cfg.EmbeddingDimensions, "optional embedding output dimensions when the model supports it")
 	fs.BoolVar(&cfg.EnableApproval, "approval", cfg.EnableApproval, "ask before tool execution")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
 	fs.BoolVar(&cfg.EnableCompaction, "compaction", cfg.EnableCompaction, "enable SDK context compaction")
@@ -142,6 +149,10 @@ func defaultConfig() appConfig {
 		OpenAIAccountIDPath:  strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_OAUTH_ACCOUNT_ID_PATH")),
 		WorkDir:              firstNonEmpty(os.Getenv("ASSISTANT_WORKDIR"), wd),
 		StateDir:             firstNonEmpty(os.Getenv("ASSISTANT_STATE_DIR"), defaultStateDir()),
+		EmbeddingModel:       strings.TrimSpace(os.Getenv("ASSISTANT_EMBEDDING_MODEL")),
+		EmbeddingBaseURL:     firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_BASE_URL"), os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
+		EmbeddingAPIKey:      firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_API_KEY"), os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
+		EmbeddingDimensions:  envInt("ASSISTANT_EMBEDDING_DIMENSIONS", 0),
 		MCPConfigPaths:       splitListEnv(os.Getenv("ASSISTANT_MCP_CONFIGS")),
 		SkillCatalogPath:     strings.TrimSpace(os.Getenv("ASSISTANT_SKILL_CATALOG")),
 		Permission:           firstNonEmpty(os.Getenv("ASSISTANT_PERMISSION"), string(sdkpolicy.PermissionModeWorkspaceWrite)),
@@ -321,6 +332,7 @@ extension config:
   --mcp-config PATH         add an MCP config; repeat for any number of servers/bundles
   --skills                  expose SDK skill search/install/list tools
   --scheduling              expose schedule tools and run the background scheduler
+  --embedding-model MODEL   enable embeddings-backed hybrid memory recall (empty = lexical only)
   --audit                   emit structured audit events to stdout and logs
   --audit-level LEVEL       audit verbosity: low or full
   --audit-log PATH          append audit JSONL to PATH

@@ -94,6 +94,20 @@ Memory is model-driven: the host exposes memory tools, and the model decides
 when to call `memory_recall`, `memory_remember`, `memory_list`, and
 `prime_context`.
 
+Recall is lexical (keyword) by default. Set `ASSISTANT_EMBEDDING_MODEL` to
+enable embeddings-backed hybrid recall, which fuses keyword matching with
+semantic similarity so the assistant recalls memories relevant in meaning even
+without exact word overlap. With an OpenAI key already set, this is enough:
+
+```sh
+export OPENAI_API_KEY=sk-...
+export ASSISTANT_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+Any OpenAI-compatible `/v1/embeddings` endpoint works (including a local Ollama
+server). See [Configuration](configuration.md#hybrid-memory-recall) for the full
+set of embedding options and provider notes.
+
 Examples:
 
 ```sh

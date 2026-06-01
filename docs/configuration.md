@@ -60,6 +60,9 @@ ASSISTANT_TOOL_TIMEOUT         0
 ASSISTANT_TOOLS                true
 ASSISTANT_SCHEDULING           true
 ASSISTANT_PROJECT_STATE        true
+ASSISTANT_EMBEDDING_MODEL       (unset; lexical-only recall)
+ASSISTANT_EMBEDDING_BASE_URL    falls back to OpenAI base URL
+ASSISTANT_EMBEDDING_DIMENSIONS  0 (model default)
 ASSISTANT_APPROVAL             true
 ASSISTANT_GUARDRAILS           true
 ASSISTANT_COMPACTION           true
@@ -75,6 +78,44 @@ before approval-gated tool execution in interactive mode.
 to stdout, standard logs, and the append-only audit log path. Set
 `--audit-level low` to record only tool calls with inputs, assistant text, and
 errors.
+
+## Hybrid Memory Recall
+
+Durable memory recall is lexical (keyword) by default. Set an embedding model
+to enable embeddings-backed hybrid recall, which fuses keyword matching with
+semantic similarity so the assistant can recall memories that are relevant in
+meaning even when they share no exact words with the query.
+
+```text
+ASSISTANT_EMBEDDING_MODEL       embedding model; empty disables embeddings
+ASSISTANT_EMBEDDING_BASE_URL    OpenAI-compatible embeddings base URL
+ASSISTANT_EMBEDDING_API_KEY     embeddings API key (env only)
+ASSISTANT_EMBEDDING_DIMENSIONS  optional reduced dimensions
+```
+
+`ASSISTANT_EMBEDDING_BASE_URL` and `ASSISTANT_EMBEDDING_API_KEY` fall back to the
+OpenAI base URL and API key when unset, so an OpenAI key alone is enough:
+
+```sh
+export OPENAI_API_KEY=sk-...
+export ASSISTANT_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+Any OpenAI-compatible `/v1/embeddings` endpoint works. For a fully local setup,
+point at Ollama:
+
+```sh
+export ASSISTANT_EMBEDDING_BASE_URL=http://localhost:11434/v1
+export ASSISTANT_EMBEDDING_MODEL=bge-m3
+```
+
+OpenRouter is not usable for embeddings: it serves chat/completions but not a
+general `/v1/embeddings` endpoint. Use OpenAI or a local model for vectors.
+
+Vectors are computed when a memory is stored and cached under the state
+directory; memories written before embeddings were enabled are embedded lazily
+on their next recall. If the embedding provider is unavailable, recall falls
+back to the lexical path automatically.
 
 ## Extension Config File
 

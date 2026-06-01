@@ -100,16 +100,36 @@ func durableMemoryTools(ctx context.Context, cfg appConfig) ([]agentsdk.Tool, er
 		return nil, ctx.Err()
 	default:
 	}
+	embedder, err := buildEmbedder(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("initialize memory embedder: %w", err)
+	}
 	store, err := sdkprojectstate.NewFilesystemStore(sdkprojectstate.FilesystemOptions{
 		StateDir:  cfg.StateDir,
 		ProjectID: "personal-assistant",
 		WorkDir:   cfg.WorkDir,
 		Actor:     "assistant",
+		Embedder:  embedder,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("initialize durable memory: %w", err)
 	}
 	return sdkprojectstatetools.Tools(store, "assistant"), nil
+}
+
+// buildEmbedder returns an OpenAI-compatible embedder for hybrid memory recall,
+// or nil when no embedding model is configured (recall stays lexical-only).
+func buildEmbedder(cfg appConfig) (sdkprojectstate.Embedder, error) {
+	model := strings.TrimSpace(cfg.EmbeddingModel)
+	if model == "" {
+		return nil, nil
+	}
+	return sdkprojectstate.NewOpenAIEmbedder(sdkprojectstate.OpenAIEmbedderOptions{
+		BaseURL:    cfg.EmbeddingBaseURL,
+		APIKey:     cfg.EmbeddingAPIKey,
+		ModelID:    model,
+		Dimensions: cfg.EmbeddingDimensions,
+	})
 }
 
 func loadMergedMCPConfig(cfg appConfig) (*sdkmcp.Config, error) {
