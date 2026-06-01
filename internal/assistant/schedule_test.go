@@ -78,6 +78,76 @@ func TestScheduleCreateClaimAndDelete(t *testing.T) {
 	}
 }
 
+func TestScheduleManualRunKeepsNextRun(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.StateDir = filepath.Join(t.TempDir(), "state")
+
+	created, err := createSchedule(cfg, scheduleCreateInput{
+		Name:         "morning summary",
+		Prompt:       "summarize things",
+		EverySeconds: 3600,
+		Timezone:     "UTC",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalNextRun := created.NextRun
+	manualRunAt := created.CreatedAt.Add(5 * time.Minute)
+
+	claimed, err := claimManualScheduleRun(cfg, scheduleRunInput{Name: "morning summary"}, manualRunAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != created.ID {
+		t.Fatalf("claimed id = %q, want %q", claimed.ID, created.ID)
+	}
+	if claimed.RunCount != 1 || !claimed.LastRun.Equal(manualRunAt.UTC()) {
+		t.Fatalf("bad manual claim metadata: %#v", claimed)
+	}
+	if !claimed.NextRun.Equal(originalNextRun) {
+		t.Fatalf("manual run changed next run: got %s want %s", claimed.NextRun, originalNextRun)
+	}
+
+	finished, err := finishScheduleRunEntry(cfg, created.ID, "done", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.LastOutput != "done" || finished.LastError != "" {
+		t.Fatalf("bad finished schedule: %#v", finished)
+	}
+	if !finished.NextRun.Equal(originalNextRun) {
+		t.Fatalf("finish changed next run: got %s want %s", finished.NextRun, originalNextRun)
+	}
+}
+
+func TestScheduleManualRunDisabledRequiresOptIn(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.StateDir = filepath.Join(t.TempDir(), "state")
+	enabled := false
+
+	created, err := createSchedule(cfg, scheduleCreateInput{
+		Name:         "disabled",
+		Prompt:       "run only manually",
+		EverySeconds: 3600,
+		Enabled:      &enabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimManualScheduleRun(cfg, scheduleRunInput{ID: created.ID}, time.Now()); err == nil {
+		t.Fatal("expected disabled schedule to require allow_disabled")
+	}
+	claimed, err := claimManualScheduleRun(cfg, scheduleRunInput{ID: created.ID, AllowDisabled: true}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claimed.ID != created.ID || claimed.RunCount != 1 {
+		t.Fatalf("bad disabled manual claim: %#v", claimed)
+	}
+}
+
 func TestScheduleToolsExposedWhenEnabled(t *testing.T) {
 	cfg := defaultConfig()
 	cfg.ConfigPath = ""
@@ -94,7 +164,7 @@ func TestScheduleToolsExposedWhenEnabled(t *testing.T) {
 	for _, tool := range extensions.ExtraTools {
 		names[tool.Name()] = true
 	}
-	for _, want := range []string{"schedule_create", "schedule_list", "schedule_update", "schedule_delete"} {
+	for _, want := range []string{"schedule_create", "schedule_list", "schedule_get", "schedule_update", "schedule_delete", "schedule_run"} {
 		if !names[want] {
 			t.Fatalf("missing schedule tool %q; names=%v", want, names)
 		}

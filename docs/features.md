@@ -121,7 +121,9 @@ With approvals enabled, approve the relevant memory tool calls when prompted.
 
 Scheduling tools are enabled by default. Ask the assistant to create a
 reminder, recurring cron, or scheduled follow-up from the REPL or any channel
-that can run tools.
+that can run tools. The assistant can also invoke an existing schedule
+immediately with `schedule_run` by id or exact name without changing that
+schedule's next cron run.
 
 Scheduled jobs are stored in
 `~/.gratefulagents/assistant/state/schedules.json` by default. Override the

@@ -67,6 +67,17 @@ type scheduleUpdateInput struct {
 	Enabled      *bool   `json:"enabled"`
 }
 
+type scheduleRunInput struct {
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	AllowDisabled bool   `json:"allow_disabled"`
+}
+
+type scheduleRunResult struct {
+	Schedule scheduleEntry `json:"schedule"`
+	Output   string        `json:"output,omitempty"`
+}
+
 func runScheduler(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "assistant scheduler watching %s\n", scheduleFilePath(cfg))
 	if err := runDueSchedules(ctx, cfg, stdout, stderr); err != nil {
@@ -111,6 +122,28 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 		fmt.Fprintf(stdout, "\n[schedule %s]\n%s\n", label, reply)
 	}
 	return nil
+}
+
+func runScheduleNow(ctx context.Context, cfg appConfig, in scheduleRunInput, stdout, stderr io.Writer) (scheduleRunResult, error) {
+	entry, err := claimManualScheduleRun(cfg, in, time.Now())
+	if err != nil {
+		return scheduleRunResult{}, err
+	}
+	label := scheduleLabel(entry)
+	if stderr != nil {
+		fmt.Fprintf(stderr, "assistant schedule %s running manually\n", label)
+	}
+	reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry), stdout, stderr)
+	finished, finishErr := finishScheduleRunEntry(cfg, entry.ID, reply, runErr)
+	if finishErr != nil {
+		return scheduleRunResult{}, finishErr
+	}
+	result := scheduleRunResult{Schedule: finished}
+	if runErr != nil {
+		return result, runErr
+	}
+	result.Output = reply
+	return result, nil
 }
 
 func scheduledPrompt(entry scheduleEntry) string {
@@ -364,12 +397,17 @@ func claimDueSchedules(cfg appConfig, now time.Time) ([]scheduleEntry, error) {
 }
 
 func finishScheduleRun(cfg appConfig, id string, output string, runErr error) error {
+	_, err := finishScheduleRunEntry(cfg, id, output, runErr)
+	return err
+}
+
+func finishScheduleRunEntry(cfg appConfig, id string, output string, runErr error) (scheduleEntry, error) {
 	now := time.Now().UTC()
 	scheduleFileMu.Lock()
 	defer scheduleFileMu.Unlock()
 	state, err := readScheduleStateLocked(cfg)
 	if err != nil {
-		return err
+		return scheduleEntry{}, err
 	}
 	for i := range state.Schedules {
 		if state.Schedules[i].ID != id {
@@ -383,9 +421,70 @@ func finishScheduleRun(cfg appConfig, id string, output string, runErr error) er
 			state.Schedules[i].LastError = ""
 			state.Schedules[i].LastOutput = truncateScheduleOutput(output)
 		}
-		return writeScheduleStateLocked(cfg, state)
+		entry := state.Schedules[i]
+		if err := writeScheduleStateLocked(cfg, state); err != nil {
+			return scheduleEntry{}, err
+		}
+		return entry, nil
 	}
-	return nil
+	return scheduleEntry{}, nil
+}
+
+func claimManualScheduleRun(cfg appConfig, in scheduleRunInput, now time.Time) (scheduleEntry, error) {
+	id := strings.TrimSpace(in.ID)
+	name := strings.TrimSpace(in.Name)
+	if id == "" && name == "" {
+		return scheduleEntry{}, errors.New("id or name is required")
+	}
+	if id != "" && name != "" {
+		return scheduleEntry{}, errors.New("use only one of id or name")
+	}
+
+	now = now.UTC()
+	scheduleFileMu.Lock()
+	defer scheduleFileMu.Unlock()
+	state, err := readScheduleStateLocked(cfg)
+	if err != nil {
+		return scheduleEntry{}, err
+	}
+	match := -1
+	for i, entry := range state.Schedules {
+		matches := entry.ID == id
+		if name != "" {
+			matches = entry.Name == name
+		}
+		if !matches {
+			continue
+		}
+		if match >= 0 && name != "" {
+			return scheduleEntry{}, fmt.Errorf("multiple schedules named %q; use id", name)
+		}
+		match = i
+	}
+	if match < 0 {
+		if id != "" {
+			return scheduleEntry{}, fmt.Errorf("schedule %q not found", id)
+		}
+		return scheduleEntry{}, fmt.Errorf("schedule named %q not found", name)
+	}
+
+	entry := state.Schedules[match]
+	if !entry.Enabled && !in.AllowDisabled {
+		return scheduleEntry{}, fmt.Errorf("schedule %q is disabled; set allow_disabled to true to run it manually", entry.ID)
+	}
+	if err := validateSchedule(entry); err != nil {
+		return scheduleEntry{}, err
+	}
+	entry.LastRun = now
+	entry.RunCount++
+	entry.LastError = ""
+	entry.LastOutput = ""
+	entry.UpdatedAt = now
+	state.Schedules[match] = entry
+	if err := writeScheduleStateLocked(cfg, state); err != nil {
+		return scheduleEntry{}, err
+	}
+	return entry, nil
 }
 
 func hasConfiguredSchedules(cfg appConfig) (bool, error) {

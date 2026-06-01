@@ -18,6 +18,7 @@ func scheduleTools(cfg appConfig) []agentsdk.Tool {
 		&scheduleGetTool{scheduleToolBase: base},
 		&scheduleUpdateTool{scheduleToolBase: base},
 		&scheduleDeleteTool{scheduleToolBase: base},
+		&scheduleRunTool{scheduleToolBase: base},
 	}
 }
 
@@ -173,6 +174,32 @@ func (t *scheduleDeleteTool) Execute(_ context.Context, raw json.RawMessage, _ s
 	}
 	entry, err := deleteSchedule(t.cfg, in.ID)
 	return scheduleToolResult(entry, err), nil
+}
+
+type scheduleRunTool struct{ scheduleToolBase }
+
+func (t *scheduleRunTool) Name() string { return "schedule_run" }
+func (t *scheduleRunTool) Description() string {
+	return "Run an existing durable scheduled assistant prompt immediately by id or exact name without changing its next scheduled run."
+}
+func (t *scheduleRunTool) IsReadOnly() bool { return false }
+func (t *scheduleRunTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"id": {"type": "string", "description": "Schedule id to run."},
+			"name": {"type": "string", "description": "Exact schedule name to run when id is not known. Use id if names are duplicated."},
+			"allow_disabled": {"type": "boolean", "description": "Set true to run a disabled schedule manually."}
+		}
+	}`)
+}
+func (t *scheduleRunTool) Execute(ctx context.Context, raw json.RawMessage, _ string) (agentsdk.ToolResult, error) {
+	var in scheduleRunInput
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return agentsdk.ToolResult{Content: fmt.Sprintf("Invalid input: %v", err), IsError: true}, nil
+	}
+	result, err := runScheduleNow(ctx, t.cfg, in, nil, nil)
+	return scheduleToolResult(result, err), nil
 }
 
 func scheduleToolResult(value any, err error) agentsdk.ToolResult {
