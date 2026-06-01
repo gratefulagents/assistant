@@ -42,49 +42,24 @@ checksum:
   name_template: SHA256SUMS
   algorithm: sha256
 
-dockers:
-  - image_templates:
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-amd64"
+dockers_v2:
+  - images:
+      - "ghcr.io/gratefulagents/assistant"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
     dockerfile: Dockerfile.goreleaser
     ids:
       - assistant
-    use: buildx
-    goos: linux
-    goarch: amd64
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/amd64"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.name={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.source=https://github.com/gratefulagents/assistant"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-  - image_templates:
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-arm64"
-    dockerfile: Dockerfile.goreleaser
-    ids:
-      - assistant
-    use: buildx
-    goos: linux
-    goarch: arm64
-    build_flag_templates:
-      - "--pull"
-      - "--platform=linux/arm64"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.name={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.source=https://github.com/gratefulagents/assistant"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-
-docker_manifests:
-  - name_template: "ghcr.io/gratefulagents/assistant:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-amd64"
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/gratefulagents/assistant:latest"
-    image_templates:
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-amd64"
-      - "ghcr.io/gratefulagents/assistant:{{ .Version }}-arm64"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.name": "{{ .ProjectName }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.source": "https://github.com/gratefulagents/assistant"
+      "org.opencontainers.image.version": "{{ .Version }}"
 
 changelog:
   use: github
