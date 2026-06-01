@@ -207,6 +207,8 @@ Telegram:
 
 ```text
 ASSISTANT_TELEGRAM_BOT_TOKEN       required for `assistant telegram`
+ASSISTANT_TELEGRAM_ALLOWED_USERS   comma-separated allowed user IDs/usernames
+ASSISTANT_TELEGRAM_ALLOWED_CHATS   comma-separated allowed chat IDs
 ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
 ```
 
@@ -216,12 +218,18 @@ the bot token, then export it before starting the poller:
 
 ```sh
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-oauth
 ```
 
 Assistant reads process environment variables. It does not automatically load a
 repository `.env` file; use your shell, `direnv`, or another secret manager to
 load `.env` before running the command.
+
+Telegram messages are ignored unless the sender or chat is allowlisted. Prefer
+numeric Telegram user IDs over usernames. To discover IDs, start the poller,
+send one message, read the `telegram access denied` log line, then set the
+matching user or chat ID and restart.
 
 Gmail:
 

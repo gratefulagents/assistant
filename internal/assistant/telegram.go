@@ -97,6 +97,9 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 	if err := telegramConfigureBot(ctx, token); err != nil {
 		fmt.Fprintf(stderr, "telegram menu warning: %v\n", err)
 	}
+	if len(cfg.TelegramAllowedUsers) == 0 && len(cfg.TelegramAllowedChats) == 0 {
+		fmt.Fprintf(stderr, "telegram access allowlist is empty; incoming messages will be ignored\n")
+	}
 	fmt.Fprintf(stderr, "assistant telegram polling; no inbound port required\n")
 	for {
 		if err := ctx.Err(); err != nil {
@@ -189,6 +192,10 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 	if chatID == 0 {
 		return nil
 	}
+	if !telegramAccessAllowed(cfg, chatID, update.Message.From) {
+		fmt.Fprintf(stderr, "telegram access denied: chat=%d %s\n", chatID, telegramUserLogString(update.Message.From))
+		return nil
+	}
 	userID := fmt.Sprintf("%d", update.Message.From.ID)
 	if strings.TrimSpace(update.Message.From.Username) != "" {
 		userID = update.Message.From.Username
@@ -206,13 +213,17 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 }
 
 func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, query telegramCallbackQuery, conversations *conversationStore) error {
-	command := telegramCallbackCommand(query.Data)
-	if command == "" {
-		return answerTelegramCallbackQuery(ctx, token, query.ID, "Unknown action")
-	}
 	chatID := query.Message.Chat.ID
 	if chatID == 0 {
 		return answerTelegramCallbackQuery(ctx, token, query.ID, "Action unavailable in this chat")
+	}
+	if !telegramAccessAllowed(cfg, chatID, query.From) {
+		fmt.Fprintf(stderr, "telegram access denied: chat=%d %s\n", chatID, telegramUserLogString(query.From))
+		return nil
+	}
+	command := telegramCallbackCommand(query.Data)
+	if command == "" {
+		return answerTelegramCallbackQuery(ctx, token, query.ID, "Unknown action")
 	}
 	userID := telegramUserID(query.From)
 	reply, err := replyToInbound(ctx, cfg, inboundMessage{
@@ -239,6 +250,60 @@ func telegramUserID(user telegramUser) string {
 		return fmt.Sprintf("%d", user.ID)
 	}
 	return ""
+}
+
+func telegramUserLogString(user telegramUser) string {
+	username := strings.TrimSpace(user.Username)
+	if username == "" {
+		username = "-"
+	}
+	return fmt.Sprintf("user_id=%d username=%s", user.ID, username)
+}
+
+func telegramAccessAllowed(cfg appConfig, chatID int64, user telegramUser) bool {
+	if telegramAllowListContains(cfg.TelegramAllowedChats, fmt.Sprintf("%d", chatID)) {
+		return true
+	}
+	if user.ID != 0 && telegramAllowListContains(cfg.TelegramAllowedUsers, fmt.Sprintf("%d", user.ID)) {
+		return true
+	}
+	if username := normalizeTelegramAllowListValue(user.Username); username != "" {
+		return telegramAllowListContains(cfg.TelegramAllowedUsers, username)
+	}
+	return false
+}
+
+func telegramAllowListContains(values []string, value string) bool {
+	value = normalizeTelegramAllowListValue(value)
+	for _, allowed := range values {
+		allowed = normalizeTelegramAllowListValue(allowed)
+		if allowed == "*" || allowed == value {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeTelegramAllowList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, field := range splitTelegramAllowListValue(value) {
+			if normalized := normalizeTelegramAllowListValue(field); normalized != "" {
+				out = append(out, normalized)
+			}
+		}
+	}
+	return uniqueStrings(out)
+}
+
+func splitTelegramAllowListValue(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+}
+
+func normalizeTelegramAllowListValue(value string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 }
 
 func telegramCallbackCommand(data string) string {

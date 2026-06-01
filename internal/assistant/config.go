@@ -61,6 +61,8 @@ type appConfig struct {
 	GatewayAddr          string
 	GatewayToken         string
 	TelegramBotToken     string
+	TelegramAllowedUsers stringListFlag
+	TelegramAllowedChats stringListFlag
 	TelegramPollTimeout  int
 	GmailToken           string
 	GmailUser            string
@@ -116,6 +118,8 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.GatewayAddr, "addr", cfg.GatewayAddr, "gateway listen address for serve mode")
 	fs.StringVar(&cfg.GatewayToken, "gateway-token", cfg.GatewayToken, "bearer token for generic gateway endpoint")
 	fs.StringVar(&cfg.TelegramBotToken, "telegram-bot-token", cfg.TelegramBotToken, "Telegram bot token for long polling")
+	fs.Var(&cfg.TelegramAllowedUsers, "telegram-allowed-user", "Telegram user ID or username allowed to use the bot; repeat or comma-separate")
+	fs.Var(&cfg.TelegramAllowedChats, "telegram-allowed-chat", "Telegram chat ID allowed to use the bot; repeat or comma-separate")
 	fs.IntVar(&cfg.TelegramPollTimeout, "telegram-poll-timeout", cfg.TelegramPollTimeout, "Telegram long-poll timeout in seconds")
 	fs.StringVar(&cfg.GmailToken, "gmail-token", cfg.GmailToken, "Gmail OAuth access token for polling")
 	fs.StringVar(&cfg.GmailUser, "gmail-user", cfg.GmailUser, "Gmail user id; usually me")
@@ -176,6 +180,8 @@ func defaultConfig() appConfig {
 		GatewayAddr:          firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
 		GatewayToken:         strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
 		TelegramBotToken:     strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
+		TelegramAllowedUsers: splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
+		TelegramAllowedChats: splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),
 		TelegramPollTimeout:  envInt("ASSISTANT_TELEGRAM_POLL_TIMEOUT", 50),
 		GmailToken:           firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_ACCESS_TOKEN"), os.Getenv("ASSISTANT_GMAIL_TOKEN")),
 		GmailUser:            firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_USER"), "me"),
@@ -220,6 +226,8 @@ func (c *appConfig) validate() error {
 	if c.TelegramPollTimeout <= 0 {
 		c.TelegramPollTimeout = 50
 	}
+	c.TelegramAllowedUsers = normalizeTelegramAllowList(c.TelegramAllowedUsers)
+	c.TelegramAllowedChats = normalizeTelegramAllowList(c.TelegramAllowedChats)
 	if c.GmailPollInterval <= 0 {
 		c.GmailPollInterval = 60
 	}

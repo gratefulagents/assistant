@@ -201,6 +201,7 @@ Set the token in the process environment before starting Assistant:
 
 ```sh
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-oauth
 ```
 
@@ -209,6 +210,7 @@ For API-key provider mode, set the OpenAI key too:
 ```sh
 export OPENAI_API_KEY='sk-...'
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-api
 ```
 
@@ -235,6 +237,8 @@ Useful flags:
 
 ```text
 --telegram-bot-token       Telegram bot token
+--telegram-allowed-user    Telegram user ID or username allowed to use the bot
+--telegram-allowed-chat    Telegram chat ID allowed to use the bot
 --telegram-poll-timeout    Telegram long-poll timeout in seconds
 ```
 
@@ -242,8 +246,17 @@ Equivalent environment variables:
 
 ```text
 ASSISTANT_TELEGRAM_BOT_TOKEN       required unless --telegram-bot-token is set
+ASSISTANT_TELEGRAM_ALLOWED_USERS   comma-separated allowed user IDs/usernames
+ASSISTANT_TELEGRAM_ALLOWED_CHATS   comma-separated allowed chat IDs
 ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
 ```
+
+Telegram access is deny-by-default. At least one allowed user or chat must be
+configured before any Telegram message can reach the assistant. Prefer numeric
+Telegram user IDs over usernames. If you need to discover the IDs, start the
+poller, send the bot one message, read the `telegram access denied` line from
+the process logs, then set the matching user or chat ID and restart.
+Messages outside the allowlist are ignored without a Telegram reply.
 
 Telegram replies are sent with Bot API HTML formatting enabled. Assistant may
 use Telegram-supported rich text such as bold, italic, underline,

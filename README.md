@@ -105,12 +105,16 @@ Telegram bot with OpenAI OAuth:
 
 ```sh
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-oauth --permission read-only --max-turns 100
 ```
 
 Assistant reads OpenAI OAuth credentials from `~/.codex/auth.json` by default.
 Telegram polling uses outbound requests only, so no public webhook or inbound
-port is required.
+port is required. Telegram access is deny-by-default: set
+`ASSISTANT_TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID, or
+`ASSISTANT_TELEGRAM_ALLOWED_CHATS` to a specific chat ID. Messages outside the
+allowlist are ignored before an assistant run starts.
 
 Interactive OAuth mode:
 
@@ -135,6 +139,7 @@ Telegram with API-key mode:
 ```sh
 export OPENAI_API_KEY='sk-...'
 export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-api --permission read-only --max-turns 100
 ```
 

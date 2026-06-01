@@ -20,7 +20,9 @@ Security-relevant defaults:
 ```
 
 The local gateway refuses `/v1/messages` unless a bearer token is configured
-and supplied. Telegram and Gmail do not expose inbound HTTP ports.
+and supplied. Telegram and Gmail do not expose inbound HTTP ports. Telegram
+also ignores all messages unless `ASSISTANT_TELEGRAM_ALLOWED_USERS` or
+`ASSISTANT_TELEGRAM_ALLOWED_CHATS` is configured.
 
 ## Credentials
 

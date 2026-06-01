@@ -504,6 +504,69 @@ func TestTelegramBotCommandsIncludeChatControls(t *testing.T) {
 	}
 }
 
+func TestTelegramAccessRequiresAllowList(t *testing.T) {
+	cfg := appConfig{}
+	user := telegramUser{ID: 7, Username: "hunter"}
+	if telegramAccessAllowed(cfg, 9, user) {
+		t.Fatal("telegramAccessAllowed allowed a user with no allowlist")
+	}
+}
+
+func TestTelegramAccessAllowList(t *testing.T) {
+	user := telegramUser{ID: 7, Username: "Hunter"}
+	tests := []struct {
+		name    string
+		cfg     appConfig
+		allowed bool
+	}{
+		{
+			name:    "user id",
+			cfg:     appConfig{TelegramAllowedUsers: normalizeTelegramAllowList([]string{"7"})},
+			allowed: true,
+		},
+		{
+			name:    "username",
+			cfg:     appConfig{TelegramAllowedUsers: normalizeTelegramAllowList([]string{"@hunter"})},
+			allowed: true,
+		},
+		{
+			name:    "chat id",
+			cfg:     appConfig{TelegramAllowedChats: normalizeTelegramAllowList([]string{"9"})},
+			allowed: true,
+		},
+		{
+			name:    "wildcard",
+			cfg:     appConfig{TelegramAllowedUsers: normalizeTelegramAllowList([]string{"*"})},
+			allowed: true,
+		},
+		{
+			name:    "different user",
+			cfg:     appConfig{TelegramAllowedUsers: normalizeTelegramAllowList([]string{"8"})},
+			allowed: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := telegramAccessAllowed(tt.cfg, 9, user); got != tt.allowed {
+				t.Fatalf("telegramAccessAllowed() = %v, want %v", got, tt.allowed)
+			}
+		})
+	}
+}
+
+func TestNormalizeTelegramAllowList(t *testing.T) {
+	got := normalizeTelegramAllowList([]string{"@Hunter, 7", "hunter"})
+	want := []string{"hunter", "7"}
+	if len(got) != len(want) {
+		t.Fatalf("normalizeTelegramAllowList() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("normalizeTelegramAllowList() = %#v, want %#v", got, want)
+		}
+	}
+}
+
 func TestTelegramHTMLMessagePreservesSupportedFormatting(t *testing.T) {
 	input := strings.Join([]string{
 		`<b>Weather</b>`,
