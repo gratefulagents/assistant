@@ -36,12 +36,15 @@ const (
 // familyConfig is the on-disk assistant.yaml that holds the deployment config
 // and is the single source of truth for managing the per-member containers.
 type familyConfig struct {
-	Image         string         `yaml:"image"`
-	Provider      string         `yaml:"provider"`
-	CodexAuthPath string         `yaml:"codexAuthPath"`
-	Restart       string         `yaml:"restart"`
-	User          string         `yaml:"user,omitempty"`
-	Members       []familyMember `yaml:"members"`
+	Image         string            `yaml:"image"`
+	Provider      string            `yaml:"provider"`
+	CodexAuthPath string            `yaml:"codexAuthPath"`
+	Restart       string            `yaml:"restart"`
+	User          string            `yaml:"user,omitempty"`
+	Audit         *bool             `yaml:"audit,omitempty"`
+	AuditLevel    string            `yaml:"auditLevel,omitempty"`
+	Defaults      assistantSettings `yaml:"defaults,omitempty"`
+	Members       []familyMember    `yaml:"members"`
 }
 
 // familyMember is a single deployed assistant: one family member or freeloader,
@@ -52,11 +55,47 @@ type familyMember struct {
 	Role                 string            `yaml:"role"`
 	Container            string            `yaml:"container"`
 	Volume               string            `yaml:"volume"`
-	Model                string            `yaml:"model,omitempty"`
 	TelegramBotToken     string            `yaml:"telegramBotToken"`
 	TelegramAllowedUsers []string          `yaml:"telegramAllowedUsers,omitempty"`
 	TelegramAllowedChats []string          `yaml:"telegramAllowedChats,omitempty"`
 	Env                  map[string]string `yaml:"env,omitempty"`
+	// Settings holds any assistant flag; inlined so members read like a flat
+	// config. Values set here override familyConfig.Defaults for this member.
+	Settings assistantSettings `yaml:",inline"`
+}
+
+// assistantSettings mirrors the tunable `assistant` flags so every flag is
+// configurable from assistant.yaml, both deployment-wide (familyConfig.Defaults)
+// and per member. Unset fields fall back to the assistant binary's own defaults.
+type assistantSettings struct {
+	Model               string   `yaml:"model,omitempty"`
+	BaseURL             string   `yaml:"baseUrl,omitempty"`
+	APIMode             string   `yaml:"apiMode,omitempty"`
+	APIKey              string   `yaml:"apiKey,omitempty"`
+	OAuthAccountID      string   `yaml:"openaiOauthAccountId,omitempty"`
+	OAuthAccountIDPath  string   `yaml:"openaiOauthAccountIdPath,omitempty"`
+	Permission          string   `yaml:"permission,omitempty"`
+	Reasoning           string   `yaml:"reasoning,omitempty"`
+	Verbosity           string   `yaml:"verbosity,omitempty"`
+	SkillCatalog        string   `yaml:"skillCatalog,omitempty"`
+	MCPConfigPaths      []string `yaml:"mcpConfig,omitempty"`
+	MaxTurns            *int     `yaml:"maxTurns,omitempty"`
+	MaxTokens           *int     `yaml:"maxTokens,omitempty"`
+	ToolTimeout         *int     `yaml:"toolTimeout,omitempty"`
+	Tools               *bool    `yaml:"tools,omitempty"`
+	MCP                 *bool    `yaml:"mcp,omitempty"`
+	Skills              *bool    `yaml:"skills,omitempty"`
+	Scheduling          *bool    `yaml:"scheduling,omitempty"`
+	ProjectState        *bool    `yaml:"projectState,omitempty"`
+	Approval            *bool    `yaml:"approval,omitempty"`
+	Guardrails          *bool    `yaml:"guardrails,omitempty"`
+	Compaction          *bool    `yaml:"compaction,omitempty"`
+	PrivateNetwork      *bool    `yaml:"privateNetwork,omitempty"`
+	Debug               *bool    `yaml:"debug,omitempty"`
+	EmbeddingModel      string   `yaml:"embeddingModel,omitempty"`
+	EmbeddingBaseURL    string   `yaml:"embeddingBaseUrl,omitempty"`
+	EmbeddingDimensions *int     `yaml:"embeddingDimensions,omitempty"`
+	TelegramPollTimeout *int     `yaml:"telegramPollTimeout,omitempty"`
 }
 
 // runFamilyDeploy is the entry point for `assistant family-deploy`. It owns its
@@ -374,6 +413,16 @@ func (c *familyConfig) applyDefaults() {
 	c.CodexAuthPath = firstNonEmpty(c.CodexAuthPath, defaultOAuthPath())
 	c.Restart = firstNonEmpty(c.Restart, defaultFamilyRestart)
 	c.User = firstNonEmpty(c.User, defaultFamilyUser)
+	if c.Audit == nil {
+		// Family containers run unattended, so default to low-level auditing for
+		// a lightweight per-member activity trail.
+		enabled := true
+		c.Audit = &enabled
+	}
+	c.AuditLevel = normalizeAuditLevel(firstNonEmpty(c.AuditLevel, auditLevelLow))
+	if c.AuditLevel == "" {
+		c.AuditLevel = auditLevelLow
+	}
 	for i := range c.Members {
 		m := &c.Members[i]
 		m.Role = firstNonEmpty(strings.ToLower(m.Role), familyRoleFamily)
@@ -472,9 +521,10 @@ func familyRunArgs(cfg familyConfig, m familyMember, authPath string) []string {
 		"--openai-oauth-path", familyOAuthMount,
 		"--state-dir", familyStateMount,
 	)
-	if strings.TrimSpace(m.Model) != "" {
-		args = append(args, "--model", m.Model)
+	if cfg.Audit == nil || *cfg.Audit {
+		args = append(args, "--audit", "--audit-level", firstNonEmpty(cfg.AuditLevel, auditLevelLow))
 	}
+	args = append(args, cfg.Defaults.merge(m.Settings).renderArgs()...)
 	for _, u := range m.TelegramAllowedUsers {
 		if strings.TrimSpace(u) != "" {
 			args = append(args, "--telegram-allowed-user", u)
@@ -485,6 +535,150 @@ func familyRunArgs(cfg familyConfig, m familyMember, authPath string) []string {
 			args = append(args, "--telegram-allowed-chat", ch)
 		}
 	}
+	return args
+}
+
+// merge returns base settings with every field set on override taking
+// precedence, so per-member values win over deployment-wide defaults.
+func (base assistantSettings) merge(override assistantSettings) assistantSettings {
+	out := base
+	if override.Model != "" {
+		out.Model = override.Model
+	}
+	if override.BaseURL != "" {
+		out.BaseURL = override.BaseURL
+	}
+	if override.APIMode != "" {
+		out.APIMode = override.APIMode
+	}
+	if override.APIKey != "" {
+		out.APIKey = override.APIKey
+	}
+	if override.OAuthAccountID != "" {
+		out.OAuthAccountID = override.OAuthAccountID
+	}
+	if override.OAuthAccountIDPath != "" {
+		out.OAuthAccountIDPath = override.OAuthAccountIDPath
+	}
+	if override.Permission != "" {
+		out.Permission = override.Permission
+	}
+	if override.Reasoning != "" {
+		out.Reasoning = override.Reasoning
+	}
+	if override.Verbosity != "" {
+		out.Verbosity = override.Verbosity
+	}
+	if override.SkillCatalog != "" {
+		out.SkillCatalog = override.SkillCatalog
+	}
+	if len(override.MCPConfigPaths) > 0 {
+		out.MCPConfigPaths = override.MCPConfigPaths
+	}
+	if override.MaxTurns != nil {
+		out.MaxTurns = override.MaxTurns
+	}
+	if override.MaxTokens != nil {
+		out.MaxTokens = override.MaxTokens
+	}
+	if override.ToolTimeout != nil {
+		out.ToolTimeout = override.ToolTimeout
+	}
+	if override.Tools != nil {
+		out.Tools = override.Tools
+	}
+	if override.MCP != nil {
+		out.MCP = override.MCP
+	}
+	if override.Skills != nil {
+		out.Skills = override.Skills
+	}
+	if override.Scheduling != nil {
+		out.Scheduling = override.Scheduling
+	}
+	if override.ProjectState != nil {
+		out.ProjectState = override.ProjectState
+	}
+	if override.Approval != nil {
+		out.Approval = override.Approval
+	}
+	if override.Guardrails != nil {
+		out.Guardrails = override.Guardrails
+	}
+	if override.Compaction != nil {
+		out.Compaction = override.Compaction
+	}
+	if override.PrivateNetwork != nil {
+		out.PrivateNetwork = override.PrivateNetwork
+	}
+	if override.Debug != nil {
+		out.Debug = override.Debug
+	}
+	if override.EmbeddingModel != "" {
+		out.EmbeddingModel = override.EmbeddingModel
+	}
+	if override.EmbeddingBaseURL != "" {
+		out.EmbeddingBaseURL = override.EmbeddingBaseURL
+	}
+	if override.EmbeddingDimensions != nil {
+		out.EmbeddingDimensions = override.EmbeddingDimensions
+	}
+	if override.TelegramPollTimeout != nil {
+		out.TelegramPollTimeout = override.TelegramPollTimeout
+	}
+	return out
+}
+
+// renderArgs turns the settings into assistant CLI flags. Only fields that are
+// explicitly set are emitted; everything else defers to the binary's defaults.
+func (s assistantSettings) renderArgs() []string {
+	var args []string
+	addStr := func(flag, value string) {
+		if strings.TrimSpace(value) != "" {
+			args = append(args, "--"+flag, value)
+		}
+	}
+	addInt := func(flag string, value *int) {
+		if value != nil {
+			args = append(args, "--"+flag, strconv.Itoa(*value))
+		}
+	}
+	addBool := func(flag string, value *bool) {
+		if value != nil {
+			args = append(args, fmt.Sprintf("--%s=%t", flag, *value))
+		}
+	}
+
+	addStr("model", s.Model)
+	addStr("base-url", s.BaseURL)
+	addStr("api-mode", s.APIMode)
+	addStr("api-key", s.APIKey)
+	addStr("openai-oauth-account-id", s.OAuthAccountID)
+	addStr("openai-oauth-account-id-path", s.OAuthAccountIDPath)
+	addStr("permission", s.Permission)
+	addStr("reasoning", s.Reasoning)
+	addStr("verbosity", s.Verbosity)
+	addStr("skill-catalog", s.SkillCatalog)
+	for _, p := range s.MCPConfigPaths {
+		addStr("mcp-config", p)
+	}
+	addInt("max-turns", s.MaxTurns)
+	addInt("max-tokens", s.MaxTokens)
+	addInt("tool-timeout", s.ToolTimeout)
+	addBool("tools", s.Tools)
+	addBool("mcp", s.MCP)
+	addBool("skills", s.Skills)
+	addBool("scheduling", s.Scheduling)
+	addBool("project-state", s.ProjectState)
+	addBool("approval", s.Approval)
+	addBool("guardrails", s.Guardrails)
+	addBool("compaction", s.Compaction)
+	addBool("private-network", s.PrivateNetwork)
+	addBool("debug", s.Debug)
+	addStr("embedding-model", s.EmbeddingModel)
+	addStr("embedding-base-url", s.EmbeddingBaseURL)
+	addInt("embedding-dimensions", s.EmbeddingDimensions)
+	addInt("telegram-poll-timeout", s.TelegramPollTimeout)
 	return args
 }
 

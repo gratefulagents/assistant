@@ -62,9 +62,9 @@ func TestFamilyRunArgs(t *testing.T) {
 		Role:                 "family",
 		Container:            "assistant-family-alice",
 		Volume:               "assistant-family-alice-state",
-		Model:                "gpt-test",
 		TelegramBotToken:     "123:abc",
 		TelegramAllowedUsers: []string{"42"},
+		Settings:             assistantSettings{Model: "gpt-test"},
 	}
 	args := familyRunArgs(cfg, m, "/host/auth.json")
 	joined := strings.Join(args, " ")
@@ -142,6 +142,65 @@ func TestFamilyConfigValidateRequiresTokenAndAllowList(t *testing.T) {
 	noAllow.Members[0].TelegramAllowedUsers = nil
 	if err := noAllow.validate(); err == nil {
 		t.Error("expected error when telegramAllowedUsers is empty")
+	}
+}
+
+func TestFamilySettingsMergeAndRender(t *testing.T) {
+	on := true
+	off := false
+	turns := 20
+	defaults := assistantSettings{
+		Reasoning: "high",
+		MaxTurns:  &turns,
+		Tools:     &on,
+		Skills:    &on,
+	}
+	override := assistantSettings{
+		Reasoning: "low", // member overrides default
+		Skills:    &off,  // member disables
+	}
+	merged := defaults.merge(override)
+	joined := strings.Join(merged.renderArgs(), " ")
+
+	wants := []string{"--reasoning low", "--max-turns 20", "--tools=true", "--skills=false"}
+	for _, want := range wants {
+		if !strings.Contains(joined, want) {
+			t.Errorf("rendered args missing %q\n got: %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "--reasoning high") {
+		t.Errorf("override should win for reasoning\n got: %s", joined)
+	}
+}
+
+func TestFamilyInlineSettingsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "assistant.yaml")
+	turns := 12
+	in := familyConfig{
+		Defaults: assistantSettings{Reasoning: "medium"},
+		Members: []familyMember{{
+			Name:                 "Alice",
+			TelegramBotToken:     "1:a",
+			TelegramAllowedUsers: []string{"111"},
+			Settings:             assistantSettings{Permission: "read-only", MaxTurns: &turns},
+		}},
+	}
+	in.applyDefaults()
+	if err := saveFamilyConfig(path, in); err != nil {
+		t.Fatalf("saveFamilyConfig: %v", err)
+	}
+	out, err := loadFamilyConfig(path)
+	if err != nil {
+		t.Fatalf("loadFamilyConfig: %v", err)
+	}
+	if out.Defaults.Reasoning != "medium" {
+		t.Errorf("defaults.reasoning = %q, want medium", out.Defaults.Reasoning)
+	}
+	if out.Members[0].Settings.Permission != "read-only" {
+		t.Errorf("member permission = %q, want read-only", out.Members[0].Settings.Permission)
+	}
+	if out.Members[0].Settings.MaxTurns == nil || *out.Members[0].Settings.MaxTurns != 12 {
+		t.Errorf("member maxTurns not preserved: %+v", out.Members[0].Settings.MaxTurns)
 	}
 }
 
