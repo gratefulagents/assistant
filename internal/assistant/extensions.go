@@ -21,8 +21,15 @@ type assistantConfigFile struct {
 	MCPServers     map[string]sdkmcp.ServerConfig `json:"mcpServers,omitempty"`
 	MCPConfigPaths stringListFlag                 `json:"mcpConfigPaths,omitempty"`
 	Skills         skillsConfig                   `json:"skills,omitempty"`
+	Approvals      approvalsConfig                `json:"approvals,omitempty"`
 	Plugins        []pluginConfig                 `json:"plugins,omitempty"`
 	Extensions     []pluginConfig                 `json:"extensions,omitempty"`
+}
+
+type approvalsConfig struct {
+	Reviewer        string `json:"reviewer,omitempty"`
+	ReviewerModel   string `json:"reviewerModel,omitempty"`
+	ReviewerTimeout int    `json:"reviewerTimeout,omitempty"`
 }
 
 type skillsConfig struct {

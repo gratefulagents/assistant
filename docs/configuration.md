@@ -73,6 +73,9 @@ ASSISTANT_EMBEDDING_MODEL       (unset; lexical-only recall)
 ASSISTANT_EMBEDDING_BASE_URL    falls back to OpenAI base URL
 ASSISTANT_EMBEDDING_DIMENSIONS  0 (model default)
 ASSISTANT_APPROVAL             true
+ASSISTANT_APPROVALS_REVIEWER   user
+ASSISTANT_APPROVALS_REVIEWER_MODEL  (unset; uses main model)
+ASSISTANT_APPROVALS_REVIEWER_TIMEOUT 90
 ASSISTANT_GUARDRAILS           true
 ASSISTANT_COMPACTION           true
 ASSISTANT_PRIVATE_NETWORK      false
@@ -82,7 +85,12 @@ ASSISTANT_AUDIT_LOG            ~/.gratefulagents/assistant/state/audit.ndjson
 ```
 
 `--permission read-only` restricts SDK tool access. `--approval=true` asks
-before approval-gated tool execution in interactive mode.
+before approval-gated tool execution in interactive mode, and Telegram mode
+sends approval cards with Approve and Deny buttons. Set
+`--approvals-reviewer auto-review` to run a separate no-tools reviewer model
+before prompting the user; it returns allow, deny, or escalate. Escalations use
+the normal terminal or Telegram approval path when available, and fail closed
+when no human approval requester exists.
 `--audit=true` mirrors structured run, model, tool, approval, and result events
 to stdout, standard logs, and the append-only audit log path. Set
 `--audit-level low` to record only tool calls with inputs, assistant text, and
@@ -150,6 +158,11 @@ extensions.
     "enabled": true,
     "catalogPath": "~/.gratefulagents/assistant/skills.json"
   },
+  "approvals": {
+    "reviewer": "user",
+    "reviewerModel": "",
+    "reviewerTimeout": 90
+  },
   "plugins": [
     {
       "name": "home-automation",
@@ -168,6 +181,11 @@ extensions.
 
 Workspace `.mcp.json` is also loaded automatically from `--workdir`. Later
 config wins when two servers use the same name.
+
+The `approvals` block is optional. `reviewer` accepts `user` or
+`auto-review` (`auto`, `guardian`, and `guardian_subagent` are accepted aliases).
+`reviewerModel` lets the approval reviewer use a different model from the main
+assistant, and `reviewerTimeout` controls the reviewer timeout in seconds.
 
 ## Skills
 

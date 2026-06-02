@@ -197,6 +197,9 @@ standalone scheduler process.
 --workdir           workspace for SDK tools
 --permission        workspace-write or read-only
 --approval          ask before tool execution
+--approvals-reviewer  user or auto-review
+--approvals-reviewer-model  optional model override for auto-review
+--approvals-reviewer-timeout  auto-review timeout in seconds
 --tools             enable SDK tools
 --mcp               enable MCP servers
 --mcp-config        extra MCP config file; repeatable
@@ -219,6 +222,10 @@ model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
 MCP and skill catalog tools are opt-in with `--mcp` and `--skills`.
 Durable memory recall is lexical by default; set `--embedding-model` (or
 `ASSISTANT_EMBEDDING_MODEL`) to enable embeddings-backed hybrid semantic recall.
+Approval prompts go directly to the user by default. Set
+`--approvals-reviewer auto-review` to have a separate reviewer model classify
+approval-gated tool calls first; it allows or denies clear cases and escalates
+to terminal or Telegram approval only when human confirmation is required.
 Audit output is opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes
 structured events to stdout, standard logs, and
 `~/.gratefulagents/assistant/state/audit.ndjson` by default. Use
@@ -242,7 +249,11 @@ Assistant runs tools on your machine, so the defaults are conservative:
   `workspace-write` allows workspace edits, but still uses approvals and
   guardrails by default.
 - With `--approval=true`, non-read-only tools pause for human confirmation in
-  interactive mode before execution.
+  interactive mode before execution. Telegram mode sends approval cards with
+  Approve and Deny buttons and also accepts yes/no replies. With
+  `--approvals-reviewer auto-review`, a separate no-tools reviewer model
+  handles clear allow/deny cases first and falls back to human approval when
+  the risk or authorization is ambiguous.
 
 Tool runs are isolated where practical:
 

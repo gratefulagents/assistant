@@ -56,11 +56,16 @@ mode is `workspace-write`; use `--permission read-only` for read-only tool
 access.
 
 Approvals are enabled by default. In interactive mode, approval-gated tool
-calls are printed to stderr and resumed after a `y` or `yes` response.
+calls are printed to stderr and resumed after a `y` or `yes` response. In
+Telegram mode, approval-gated tool calls are sent to the chat with inline
+Approve and Deny buttons; replying with `yes`, `approve`, `no`, or `deny` also
+resolves the pending request.
 
-Non-interactive channel modes cannot prompt for approval. For unattended
-Telegram, Gmail, or gateway use, either keep tools scoped so approvals are not
-required or explicitly run with `--approval=false`.
+Set `--approvals-reviewer auto-review` to run a separate no-tools reviewer model
+before human prompting. The reviewer returns allow, deny, or escalate; escalated
+requests use terminal or Telegram approval when available. Gmail, gateway, and
+scheduled runs cannot answer interactive prompts, so escalations in those modes
+fail closed unless you run with scoped tools that do not require approval.
 
 ## Audit Output
 
@@ -300,10 +305,12 @@ Telegram conversation history is kept per chat ID for the lifetime of the
 poller process. Send `/clear` in a chat, select it from the bot command menu,
 or tap the `Clear history` inline button to clear only that chat's history.
 
-For unattended Telegram use, review the tool and approval settings. Channel
-modes cannot answer interactive approval prompts, so either run with narrow or
-read-only tool access, or set `--approval=false` only for a workspace and tool
-set you trust.
+With approvals enabled, Telegram pauses approval-gated tool calls and sends an
+approval card to the chat. Tap Approve or Deny, or reply with `yes`/`no`, to
+resume the run. With `--approvals-reviewer auto-review`, Telegram approval cards
+are only sent when the reviewer escalates. For other unattended channel modes,
+either run with narrow or read-only tool access, or set `--approval=false` only
+for a workspace and tool set you trust.
 
 ## Gmail Polling
 

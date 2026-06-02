@@ -78,6 +78,7 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 		items = append(items, (*history)...)
 	}
 	items = append(items, userMessage(prompt))
+	approvals := approvalRequesterForConfig(cfg, terminalApprovalRequester{input: approvalIn, stderr: stderr}, stderr, audit)
 
 	for resumes := 0; ; resumes++ {
 		if resumes > 12 {
@@ -120,7 +121,10 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 		}
 
 		audit.EmitApprovalRequest(result.Interruption)
-		approvalItems, err := resolveApproval(ctx, bundle, result.Interruption, approvalIn, stderr, audit)
+		approvalItems, err := resolveApprovalWithRequester(ctx, bundle, result.Interruption, approvals, approvalRequestContext{
+			Items: cloneRunItems(items),
+			Mode:  mode,
+		}, stderr, audit)
 		closeBundle(bundle, stderr)
 		if err != nil {
 			audit.EmitRunError(err)

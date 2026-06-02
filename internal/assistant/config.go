@@ -19,68 +19,76 @@ import (
 const (
 	defaultOAuthRefreshInterval     = time.Hour
 	defaultOAuthRefreshIntervalText = "1h"
+	approvalReviewerUser            = "user"
+	approvalReviewerAutoReview      = "auto-review"
 )
 
 type appConfig struct {
-	Provider                  string
-	Model                     string
-	BaseURL                   string
-	APIMode                   string
-	APIKey                    string
-	OpenAIOAuthPath           string
-	OpenAIOAuthAccountID      string
-	OpenAIAccountIDPath       string
-	DisableOpenAIOAuthRefresh bool
-	OAuthRefreshInterval      time.Duration
-	WorkDir                   string
-	StateDir                  string
-	EmbeddingModel            string
-	EmbeddingBaseURL          string
-	EmbeddingAPIKey           string
-	EmbeddingDimensions       int
-	ConfigPath                string
-	MCPConfigPaths            stringListFlag
-	SkillCatalogPath          string
-	Permission                string
-	Reasoning                 string
-	Verbosity                 string
-	MaxTurns                  int
-	MaxTokens                 int
-	ToolTimeout               int
-	EnableTools               bool
-	EnableMCP                 bool
-	EnableSkills              bool
-	EnableScheduling          bool
-	EnableProjectState        bool
-	EnableApproval            bool
-	EnableGuardrails          bool
-	EnableCompaction          bool
-	AllowPrivateNetwork       bool
-	Audit                     bool
-	AuditLevel                string
-	AuditLogPath              string
-	Debug                     bool
-	Command                   string
-	SessionMode               agentsdk.SessionMode
-	ActiveMode                string
-	ActivePhase               string
-	ModeDirectiveText         string
-	Serve                     bool
-	GatewayAddr               string
-	GatewayToken              string
-	TelegramBotToken          string
-	TelegramAllowedUsers      stringListFlag
-	TelegramAllowedChats      stringListFlag
-	TelegramPollTimeout       int
-	GmailToken                string
-	GmailUser                 string
-	GmailQuery                string
-	GmailPollInterval         int
-	GmailMaxResults           int
-	GmailMarkRead             bool
-	GmailSendReplies          bool
-	Prompt                    string
-	FileConfig                assistantConfigFile
+	Provider                    string
+	Model                       string
+	BaseURL                     string
+	APIMode                     string
+	APIKey                      string
+	OpenAIOAuthPath             string
+	OpenAIOAuthAccountID        string
+	OpenAIAccountIDPath         string
+	DisableOpenAIOAuthRefresh   bool
+	OAuthRefreshInterval        time.Duration
+	WorkDir                     string
+	StateDir                    string
+	EmbeddingModel              string
+	EmbeddingBaseURL            string
+	EmbeddingAPIKey             string
+	EmbeddingDimensions         int
+	ConfigPath                  string
+	MCPConfigPaths              stringListFlag
+	SkillCatalogPath            string
+	Permission                  string
+	Reasoning                   string
+	Verbosity                   string
+	MaxTurns                    int
+	MaxTokens                   int
+	ToolTimeout                 int
+	EnableTools                 bool
+	EnableMCP                   bool
+	EnableSkills                bool
+	EnableScheduling            bool
+	EnableProjectState          bool
+	EnableApproval              bool
+	ApprovalsReviewer           string
+	ApprovalsReviewerModel      string
+	ApprovalsReviewerTimeout    int
+	ApprovalsReviewerFlagSet    bool
+	ApprovalsReviewerModelSet   bool
+	ApprovalsReviewerTimeoutSet bool
+	EnableGuardrails            bool
+	EnableCompaction            bool
+	AllowPrivateNetwork         bool
+	Audit                       bool
+	AuditLevel                  string
+	AuditLogPath                string
+	Debug                       bool
+	Command                     string
+	SessionMode                 agentsdk.SessionMode
+	ActiveMode                  string
+	ActivePhase                 string
+	ModeDirectiveText           string
+	Serve                       bool
+	GatewayAddr                 string
+	GatewayToken                string
+	TelegramBotToken            string
+	TelegramAllowedUsers        stringListFlag
+	TelegramAllowedChats        stringListFlag
+	TelegramPollTimeout         int
+	GmailToken                  string
+	GmailUser                   string
+	GmailQuery                  string
+	GmailPollInterval           int
+	GmailMaxResults             int
+	GmailMarkRead               bool
+	GmailSendReplies            bool
+	Prompt                      string
+	FileConfig                  assistantConfigFile
 }
 
 func parseConfig(args []string) (appConfig, error) {
@@ -119,6 +127,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.EmbeddingBaseURL, "embedding-base-url", cfg.EmbeddingBaseURL, "OpenAI-compatible embeddings base URL")
 	fs.IntVar(&cfg.EmbeddingDimensions, "embedding-dimensions", cfg.EmbeddingDimensions, "optional embedding output dimensions when the model supports it")
 	fs.BoolVar(&cfg.EnableApproval, "approval", cfg.EnableApproval, "ask before tool execution")
+	fs.StringVar(&cfg.ApprovalsReviewer, "approvals-reviewer", cfg.ApprovalsReviewer, "approval reviewer: user or auto-review")
+	fs.StringVar(&cfg.ApprovalsReviewerModel, "approvals-reviewer-model", cfg.ApprovalsReviewerModel, "model override for --approvals-reviewer auto-review")
+	fs.IntVar(&cfg.ApprovalsReviewerTimeout, "approvals-reviewer-timeout", cfg.ApprovalsReviewerTimeout, "auto-review approval timeout in seconds")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
 	fs.BoolVar(&cfg.EnableCompaction, "compaction", cfg.EnableCompaction, "enable SDK context compaction")
 	fs.BoolVar(&cfg.AllowPrivateNetwork, "private-network", cfg.AllowPrivateNetwork, "allow web tools to reach private network URLs")
@@ -143,6 +154,16 @@ func parseConfig(args []string) (appConfig, error) {
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, fmt.Errorf("%w\n\n%s", err, usage())
 	}
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "approvals-reviewer":
+			cfg.ApprovalsReviewerFlagSet = true
+		case "approvals-reviewer-model":
+			cfg.ApprovalsReviewerModelSet = true
+		case "approvals-reviewer-timeout":
+			cfg.ApprovalsReviewerTimeoutSet = true
+		}
+	})
 	cfg.DisableOpenAIOAuthRefresh = !openAIOAuthRefresh
 	cfg.Prompt = strings.Join(fs.Args(), " ")
 	return cfg, nil
@@ -185,6 +206,9 @@ func defaultConfig() appConfig {
 		EnableScheduling:          envBool("ASSISTANT_SCHEDULING", true),
 		EnableProjectState:        envBool("ASSISTANT_PROJECT_STATE", true),
 		EnableApproval:            envBool("ASSISTANT_APPROVAL", true),
+		ApprovalsReviewer:         firstNonEmpty(os.Getenv("ASSISTANT_APPROVALS_REVIEWER"), approvalReviewerUser),
+		ApprovalsReviewerModel:    strings.TrimSpace(os.Getenv("ASSISTANT_APPROVALS_REVIEWER_MODEL")),
+		ApprovalsReviewerTimeout:  envInt("ASSISTANT_APPROVALS_REVIEWER_TIMEOUT", 90),
 		EnableGuardrails:          envBool("ASSISTANT_GUARDRAILS", true),
 		EnableCompaction:          envBool("ASSISTANT_COMPACTION", true),
 		AllowPrivateNetwork:       envBool("ASSISTANT_PRIVATE_NETWORK", false),
@@ -233,6 +257,13 @@ func (c *appConfig) validate() error {
 	c.OpenAIAccountIDPath = expandUserPath(c.OpenAIAccountIDPath)
 	c.MCPConfigPaths = expandPathList(c.MCPConfigPaths)
 	c.Permission = normalizePermission(c.Permission)
+	c.ApprovalsReviewer = normalizeApprovalsReviewer(c.ApprovalsReviewer)
+	if c.ApprovalsReviewer == "" {
+		return errors.New("--approvals-reviewer must be user or auto-review")
+	}
+	if c.ApprovalsReviewerTimeout <= 0 {
+		c.ApprovalsReviewerTimeout = 90
+	}
 	c.AuditLevel = normalizeAuditLevel(c.AuditLevel)
 	if c.AuditLevel == "" {
 		return errors.New("--audit-level must be low or full")
@@ -262,6 +293,13 @@ func (c *appConfig) validate() error {
 		return err
 	}
 	c.applyFileConfig()
+	c.ApprovalsReviewer = normalizeApprovalsReviewer(c.ApprovalsReviewer)
+	if c.ApprovalsReviewer == "" {
+		return errors.New("--approvals-reviewer must be user or auto-review")
+	}
+	if c.ApprovalsReviewerTimeout <= 0 {
+		c.ApprovalsReviewerTimeout = 90
+	}
 
 	switch c.Provider {
 	case providerOpenAIAPI:
@@ -328,6 +366,15 @@ func (c *appConfig) loadFileConfig() error {
 func (c *appConfig) applyFileConfig() {
 	fc := c.FileConfig
 	c.MCPConfigPaths = append(c.MCPConfigPaths, expandPathList(fc.MCPConfigPaths)...)
+	if strings.TrimSpace(fc.Approvals.Reviewer) != "" && !c.ApprovalsReviewerFlagSet {
+		c.ApprovalsReviewer = fc.Approvals.Reviewer
+	}
+	if strings.TrimSpace(c.ApprovalsReviewerModel) == "" && !c.ApprovalsReviewerModelSet {
+		c.ApprovalsReviewerModel = strings.TrimSpace(fc.Approvals.ReviewerModel)
+	}
+	if fc.Approvals.ReviewerTimeout > 0 && !c.ApprovalsReviewerTimeoutSet {
+		c.ApprovalsReviewerTimeout = fc.Approvals.ReviewerTimeout
+	}
 	if strings.TrimSpace(c.SkillCatalogPath) == "" {
 		c.SkillCatalogPath = expandUserPath(fc.Skills.CatalogPath)
 	}
@@ -354,6 +401,17 @@ func (f *stringListFlag) String() string {
 func (f *stringListFlag) Set(value string) error {
 	*f = append(*f, strings.TrimSpace(value))
 	return nil
+}
+
+func normalizeApprovalsReviewer(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "user", "human":
+		return approvalReviewerUser
+	case "auto", "auto-review", "auto_review", "guardian", "guardian_subagent":
+		return approvalReviewerAutoReview
+	default:
+		return ""
+	}
 }
 
 func usage() string {

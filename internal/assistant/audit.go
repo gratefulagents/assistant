@@ -84,23 +84,24 @@ func (a *auditRecorder) EmitRunStart(cfg appConfig, prompt string) {
 		return
 	}
 	a.emit("run_start", map[string]any{
-		"command":    cfg.Command,
-		"provider":   cfg.Provider,
-		"model":      cfg.Model,
-		"workdir":    cfg.WorkDir,
-		"permission": cfg.Permission,
-		"tools":      cfg.EnableTools,
-		"mcp":        cfg.EnableMCP,
-		"skills":     cfg.EnableSkills,
-		"scheduling": cfg.EnableScheduling,
-		"prompt":     prompt,
-		"audit_log":  cfg.AuditLogPath,
-		"state_dir":  cfg.StateDir,
-		"max_turns":  cfg.MaxTurns,
-		"max_tokens": cfg.MaxTokens,
-		"approval":   cfg.EnableApproval,
-		"guardrails": cfg.EnableGuardrails,
-		"compaction": cfg.EnableCompaction,
+		"command":            cfg.Command,
+		"provider":           cfg.Provider,
+		"model":              cfg.Model,
+		"workdir":            cfg.WorkDir,
+		"permission":         cfg.Permission,
+		"tools":              cfg.EnableTools,
+		"mcp":                cfg.EnableMCP,
+		"skills":             cfg.EnableSkills,
+		"scheduling":         cfg.EnableScheduling,
+		"prompt":             prompt,
+		"audit_log":          cfg.AuditLogPath,
+		"state_dir":          cfg.StateDir,
+		"max_turns":          cfg.MaxTurns,
+		"max_tokens":         cfg.MaxTokens,
+		"approval":           cfg.EnableApproval,
+		"approvals_reviewer": cfg.ApprovalsReviewer,
+		"guardrails":         cfg.EnableGuardrails,
+		"compaction":         cfg.EnableCompaction,
 	})
 }
 
@@ -157,6 +158,30 @@ func (a *auditRecorder) EmitApprovalDecision(tool string, input json.RawMessage,
 		"input":    auditRawJSON(input),
 		"approved": approved,
 	})
+}
+
+func (a *auditRecorder) EmitApprovalReview(tool string, input json.RawMessage, outcome, riskLevel, userAuthorization, rationale, status string) {
+	if a == nil {
+		return
+	}
+	fields := map[string]any{
+		"tool":   tool,
+		"input":  auditRawJSON(input),
+		"status": strings.TrimSpace(status),
+	}
+	if strings.TrimSpace(outcome) != "" {
+		fields["outcome"] = strings.TrimSpace(outcome)
+	}
+	if strings.TrimSpace(riskLevel) != "" {
+		fields["risk_level"] = strings.TrimSpace(riskLevel)
+	}
+	if strings.TrimSpace(userAuthorization) != "" {
+		fields["user_authorization"] = strings.TrimSpace(userAuthorization)
+	}
+	if strings.TrimSpace(rationale) != "" {
+		fields["rationale"] = strings.TrimSpace(rationale)
+	}
+	a.emit("approval_review", fields)
 }
 
 func (a *auditRecorder) EmitRunItem(item *agentsdk.RunItem) {

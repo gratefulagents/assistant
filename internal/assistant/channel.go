@@ -27,6 +27,10 @@ type inboundMessage struct {
 }
 
 func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdout, stderr io.Writer, conversations *conversationStore) (string, error) {
+	return replyToInboundWithApproval(ctx, cfg, msg, stdout, stderr, conversations, nil)
+}
+
+func replyToInboundWithApproval(ctx context.Context, cfg appConfig, msg inboundMessage, stdout, stderr io.Writer, conversations *conversationStore, approvals approvalRequester) (string, error) {
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {
 		return "", errors.New("empty message")
@@ -36,7 +40,7 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdo
 		return command.Reply, nil
 	}
 	prompt := inboundPrompt(msg, text)
-	return runPromptTextWithSession(ctx, cfg, prompt, stdout, stderr, session)
+	return runPromptTextWithSessionApproval(ctx, cfg, prompt, stdout, stderr, session, approvals)
 }
 
 func inboundPrompt(msg inboundMessage, text string) string {
@@ -63,6 +67,10 @@ func runPromptText(ctx context.Context, cfg appConfig, prompt string, stdout, st
 }
 
 func runPromptTextWithSession(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession) (string, error) {
+	return runPromptTextWithSessionApproval(ctx, cfg, prompt, stdout, stderr, session, nil)
+}
+
+func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester) (string, error) {
 	if stdout == nil {
 		stdout = io.Discard
 	}
@@ -88,36 +96,65 @@ func runPromptTextWithSession(ctx context.Context, cfg appConfig, prompt string,
 		input = append(input, session.history...)
 	}
 	input = append(input, userMessage(prompt))
-	bundle, err := buildBundle(ctx, cfg, stderr, audit)
-	if err != nil {
-		audit.EmitRunError(err)
-		return "", err
-	}
-	defer closeBundle(bundle, stderr)
-	result, err := bundle.Runner.Run(ctx, bundle.Agent, cloneRunItems(input), bundle.Config)
-	if err != nil {
-		audit.EmitRunError(err)
-		return "", err
-	}
-	if result == nil {
-		err := errors.New("runner returned no result")
-		audit.EmitRunError(err)
-		return "", err
-	}
-	for i := range result.NewItems {
-		audit.EmitRunItem(&result.NewItems[i])
-	}
-	if result.Interruption != nil {
+
+	items := input
+	approvals = approvalRequesterForConfig(cfg, approvals, stderr, audit)
+	for resumes := 0; ; resumes++ {
+		if resumes > 12 {
+			err := errors.New("too many approval resumes")
+			audit.EmitRunError(err)
+			return "", err
+		}
+		bundle, err := buildBundle(ctx, cfg, stderr, audit)
+		if err != nil {
+			audit.EmitRunError(err)
+			return "", err
+		}
+		result, err := bundle.Runner.Run(ctx, bundle.Agent, cloneRunItems(items), bundle.Config)
+		if err != nil {
+			closeBundle(bundle, stderr)
+			audit.EmitRunError(err)
+			return "", err
+		}
+		if result == nil {
+			closeBundle(bundle, stderr)
+			err := errors.New("runner returned no result")
+			audit.EmitRunError(err)
+			return "", err
+		}
+		for i := range result.NewItems {
+			audit.EmitRunItem(&result.NewItems[i])
+		}
+		items = append(items, cloneRunItems(result.NewItems)...)
+		if result.Interruption == nil {
+			closeBundle(bundle, stderr)
+			if session != nil {
+				session.history = items
+			}
+			audit.EmitRunEnd(result)
+			return strings.TrimSpace(result.FinalText()), nil
+		}
 		audit.EmitApprovalRequest(result.Interruption)
-		err := fmt.Errorf("tool %q requires approval; channel mode cannot prompt", result.Interruption.ToolName)
-		audit.EmitRunError(err)
-		return "", err
+		if approvals == nil {
+			closeBundle(bundle, stderr)
+			err := fmt.Errorf("tool %q requires approval; channel mode cannot prompt", result.Interruption.ToolName)
+			audit.EmitRunError(err)
+			return "", err
+		}
+		approvalItems, err := resolveApprovalWithRequester(ctx, bundle, result.Interruption, approvals, approvalRequestContext{
+			Items: cloneRunItems(items),
+			Mode:  cfg.ActiveMode,
+		}, stderr, audit)
+		closeBundle(bundle, stderr)
+		if err != nil {
+			audit.EmitRunError(err)
+			return "", err
+		}
+		for i := range approvalItems {
+			audit.EmitRunItem(&approvalItems[i])
+		}
+		items = append(items, approvalItems...)
 	}
-	if session != nil {
-		session.history = append(input, cloneRunItems(result.NewItems)...)
-	}
-	audit.EmitRunEnd(result)
-	return strings.TrimSpace(result.FinalText()), nil
 }
 
 func postJSON(ctx context.Context, url, bearer string, payload any) error {

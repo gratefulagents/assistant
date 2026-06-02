@@ -12,15 +12,20 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	nethtml "golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 )
 
 const telegramAPIBase = "https://api.telegram.org/bot"
 const telegramMessageChunkRunes = 3800
+
+var telegramApprovalSeq atomic.Uint64
 
 type telegramOffsetState struct {
 	Offset int64 `json:"offset"`
@@ -33,8 +38,9 @@ type telegramUpdate struct {
 }
 
 type telegramMessage struct {
-	Text string `json:"text"`
-	Chat struct {
+	MessageID int64  `json:"message_id"`
+	Text      string `json:"text"`
+	Chat      struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
 	From telegramUser `json:"from"`
@@ -200,16 +206,30 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 	if strings.TrimSpace(update.Message.From.Username) != "" {
 		userID = update.Message.From.Username
 	}
-	reply, err := replyToInbound(ctx, cfg, inboundMessage{
+	msg := inboundMessage{
 		Channel: "telegram",
 		UserID:  userID,
 		Thread:  fmt.Sprintf("%d", chatID),
 		Text:    text,
-	}, stdout, stderr, conversations)
-	if err != nil {
+	}
+	session := conversations.sessionFor(msg)
+	if handled, err := handleTelegramApprovalText(ctx, token, chatID, text, session); handled || err != nil {
 		return err
 	}
-	return postTelegramMessage(ctx, token, chatID, reply)
+	if pending, ok := session.pendingApprovalSnapshot(); ok {
+		return postTelegramApprovalMessage(ctx, token, chatID, pending, "Approval pending")
+	}
+	if session.isRunning() {
+		return postTelegramMessage(ctx, token, chatID, "Still working on the previous message. I will reply here when it finishes.")
+	}
+	if command := handleSlashCommand(text, session, false); command.Handled {
+		return postTelegramMessage(ctx, token, chatID, command.Reply)
+	}
+	if !session.beginRun() {
+		return postTelegramMessage(ctx, token, chatID, "Still working on the previous message. I will reply here when it finishes.")
+	}
+	go runTelegramMessage(ctx, cfg, stdout, stderr, token, chatID, msg, session)
+	return nil
 }
 
 func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, query telegramCallbackQuery, conversations *conversationStore) error {
@@ -221,14 +241,25 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 		fmt.Fprintf(stderr, "telegram access denied: chat=%d %s\n", chatID, telegramUserLogString(query.From))
 		return nil
 	}
+	msg := inboundMessage{
+		Channel: "telegram",
+		UserID:  telegramUserID(query.From),
+		Thread:  fmt.Sprintf("%d", chatID),
+	}
+	session := conversations.sessionFor(msg)
+	if approvalID, approved, ok := telegramApprovalCallback(query.Data); ok {
+		return handleTelegramApprovalCallback(ctx, token, chatID, query, session, approvalID, approved)
+	}
+	if session.isRunning() {
+		return answerTelegramCallbackQuery(ctx, token, query.ID, "Still working on the previous message")
+	}
 	command := telegramCallbackCommand(query.Data)
 	if command == "" {
 		return answerTelegramCallbackQuery(ctx, token, query.ID, "Unknown action")
 	}
-	userID := telegramUserID(query.From)
 	reply, err := replyToInbound(ctx, cfg, inboundMessage{
 		Channel: "telegram",
-		UserID:  userID,
+		UserID:  telegramUserID(query.From),
 		Thread:  fmt.Sprintf("%d", chatID),
 		Text:    command,
 	}, stdout, stderr, conversations)
@@ -240,6 +271,130 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 		return err
 	}
 	return postTelegramMessage(ctx, token, chatID, reply)
+}
+
+func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, chatID int64, msg inboundMessage, session *conversationSession) {
+	defer session.finishRun()
+	doneTyping := make(chan struct{})
+	go telegramTypingLoop(ctx, token, chatID, doneTyping)
+	defer close(doneTyping)
+
+	approval := telegramApprovalRequester{token: token, chatID: chatID, session: session}
+	reply, err := runPromptTextWithSessionApproval(ctx, cfg, inboundPrompt(msg, msg.Text), stdout, stderr, session, approval)
+	if err != nil {
+		fmt.Fprintf(stderr, "telegram run warning: %v\n", err)
+		if postErr := postTelegramMessage(ctx, token, chatID, "Run failed: "+firstLine(err.Error())); postErr != nil {
+			fmt.Fprintf(stderr, "telegram reply warning: %v\n", postErr)
+		}
+		return
+	}
+	if strings.TrimSpace(reply) == "" {
+		reply = "Done."
+	}
+	if err := postTelegramMessage(ctx, token, chatID, reply); err != nil {
+		fmt.Fprintf(stderr, "telegram reply warning: %v\n", err)
+	}
+}
+
+type telegramApprovalRequester struct {
+	token   string
+	chatID  int64
+	session *conversationSession
+}
+
+func (r telegramApprovalRequester) RequestApproval(ctx context.Context, pending *agentsdk.Interruption, _ approvalRequestContext) (approvalDecision, error) {
+	approvalID := newTelegramApprovalID()
+	approval, ok := r.session.openApproval(approvalID, pending)
+	if !ok {
+		return approvalDecision{}, fmt.Errorf("tool %q requires approval but another approval is already pending", pending.ToolName)
+	}
+	defer r.session.clearApproval(approval.ID)
+	if err := postTelegramApprovalMessage(ctx, r.token, r.chatID, approval.snapshot(), "Approval required"); err != nil {
+		return approvalDecision{}, err
+	}
+	select {
+	case decision := <-approval.Decision:
+		return decision, nil
+	case <-ctx.Done():
+		return approvalDecision{}, ctx.Err()
+	}
+}
+
+func newTelegramApprovalID() string {
+	seq := telegramApprovalSeq.Add(1)
+	return strconv.FormatInt(time.Now().UnixNano(), 36) + "-" + strconv.FormatUint(seq, 36)
+}
+
+func handleTelegramApprovalText(ctx context.Context, token string, chatID int64, text string, session *conversationSession) (bool, error) {
+	pending, ok := session.pendingApprovalSnapshot()
+	if !ok {
+		return false, nil
+	}
+	approved, ok := telegramApprovalTextDecision(text)
+	if !ok {
+		return true, postTelegramApprovalMessage(ctx, token, chatID, pending, "Approval pending")
+	}
+	decision := approvalDecision{
+		Approved: approved,
+		Reason:   telegramApprovalDecisionReason(approved),
+	}
+	approval, decided := session.decideApproval(pending.ID, decision)
+	if !decided {
+		return true, postTelegramMessage(ctx, token, chatID, "That approval request is no longer pending.")
+	}
+	return true, postTelegramMessage(ctx, token, chatID, telegramApprovalDecisionNotice(approval, approved))
+}
+
+func handleTelegramApprovalCallback(ctx context.Context, token string, chatID int64, query telegramCallbackQuery, session *conversationSession, approvalID string, approved bool) error {
+	decision := approvalDecision{
+		Approved: approved,
+		Reason:   telegramApprovalDecisionReason(approved),
+	}
+	approval, ok := session.decideApproval(approvalID, decision)
+	if !ok {
+		if query.Message.MessageID != 0 {
+			_ = editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID)
+		}
+		return answerTelegramCallbackQuery(ctx, token, query.ID, "Approval is no longer pending")
+	}
+	if query.Message.MessageID != 0 {
+		_ = editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID)
+	}
+	notice := telegramApprovalDecisionNotice(approval, approved)
+	if err := answerTelegramCallbackQuery(ctx, token, query.ID, notice); err != nil {
+		return err
+	}
+	return postTelegramMessage(ctx, token, chatID, notice)
+}
+
+func telegramApprovalTextDecision(text string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "y", "yes", "approve", "approved", "allow", "/approve", "/yes":
+		return true, true
+	case "n", "no", "deny", "denied", "reject", "/deny", "/no":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func telegramApprovalDecisionReason(approved bool) string {
+	if approved {
+		return "approved through Telegram"
+	}
+	return "tool call denied through Telegram"
+}
+
+func telegramApprovalDecisionNotice(approval conversationApprovalSnapshot, approved bool) string {
+	action := "Denied"
+	if approved {
+		action = "Approved"
+	}
+	tool := strings.TrimSpace(approval.ToolName)
+	if tool == "" {
+		tool = "tool"
+	}
+	return action + " " + tool + ". Continuing."
 }
 
 func telegramUserID(user telegramUser) string {
@@ -306,6 +461,27 @@ func normalizeTelegramAllowListValue(value string) string {
 	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(value), "@"))
 }
 
+func telegramApprovalCallback(data string) (string, bool, bool) {
+	const prefix = "assistant:approval:"
+	data = strings.TrimSpace(data)
+	if !strings.HasPrefix(data, prefix) {
+		return "", false, false
+	}
+	rest := strings.TrimPrefix(data, prefix)
+	id, action, ok := strings.Cut(rest, ":")
+	if !ok || strings.TrimSpace(id) == "" {
+		return "", false, false
+	}
+	switch strings.TrimSpace(action) {
+	case "approve":
+		return id, true, true
+	case "deny":
+		return id, false, true
+	default:
+		return "", false, false
+	}
+}
+
 func telegramCallbackCommand(data string) string {
 	const prefix = "assistant:"
 	data = strings.TrimSpace(data)
@@ -349,6 +525,123 @@ func answerTelegramCallbackQuery(ctx context.Context, token, callbackID, text st
 	return postJSON(ctx, telegramAPIBase+token+"/answerCallbackQuery", "", payload)
 }
 
+func editTelegramMessageReplyMarkup(ctx context.Context, token string, chatID, messageID int64) error {
+	if strings.TrimSpace(token) == "" || chatID == 0 || messageID == 0 {
+		return nil
+	}
+	payload := map[string]any{
+		"chat_id":    chatID,
+		"message_id": messageID,
+		"reply_markup": map[string]any{
+			"inline_keyboard": []any{},
+		},
+	}
+	return postJSON(ctx, telegramAPIBase+token+"/editMessageReplyMarkup", "", payload)
+}
+
+func sendTelegramChatAction(ctx context.Context, token string, chatID int64, action string) error {
+	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(action) == "" {
+		return nil
+	}
+	return postJSON(ctx, telegramAPIBase+token+"/sendChatAction", "", map[string]any{
+		"chat_id": chatID,
+		"action":  action,
+	})
+}
+
+func telegramTypingLoop(ctx context.Context, token string, chatID int64, done <-chan struct{}) {
+	_ = sendTelegramChatAction(ctx, token, chatID, "typing")
+	ticker := time.NewTicker(4 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			_ = sendTelegramChatAction(ctx, token, chatID, "typing")
+		}
+	}
+}
+
+func postTelegramApprovalMessage(ctx context.Context, token string, chatID int64, approval conversationApprovalSnapshot, title string) error {
+	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(approval.ID) == "" {
+		return nil
+	}
+	payload := map[string]any{
+		"chat_id":      chatID,
+		"reply_markup": telegramApprovalKeyboard(approval.ID),
+	}
+	return postTelegramPayload(ctx, telegramAPIBase+token+"/sendMessage", payload, telegramApprovalMessage(approval, title))
+}
+
+func telegramApprovalKeyboard(id string) map[string]any {
+	return map[string]any{
+		"inline_keyboard": [][]map[string]string{{
+			{
+				"text":          "Approve",
+				"callback_data": "assistant:approval:" + id + ":approve",
+			},
+			{
+				"text":          "Deny",
+				"callback_data": "assistant:approval:" + id + ":deny",
+			},
+		}},
+	}
+}
+
+func telegramApprovalMessage(approval conversationApprovalSnapshot, title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = "Approval required"
+	}
+	tool := strings.TrimSpace(approval.ToolName)
+	if tool == "" {
+		tool = "tool"
+	}
+	input := telegramApprovalInput(approval.Input)
+	lines := []string{
+		"<b>" + stdhtml.EscapeString(title) + "</b>",
+		"Tool: <code>" + stdhtml.EscapeString(tool) + "</code>",
+	}
+	if !approval.CreatedAt.IsZero() {
+		lines = append(lines, "Requested: <code>"+stdhtml.EscapeString(approval.CreatedAt.Format(time.RFC3339))+"</code>")
+	}
+	lines = append(lines,
+		"",
+		"<pre>"+stdhtml.EscapeString(input)+"</pre>",
+		"",
+		"Tap Approve or Deny, or reply with yes/no.",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func telegramApprovalInput(raw json.RawMessage) string {
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return "{}"
+	}
+	var decoded any
+	if err := json.Unmarshal(raw, &decoded); err == nil {
+		if pretty, err := json.MarshalIndent(decoded, "", "  "); err == nil {
+			text = string(pretty)
+		}
+	}
+	return telegramTruncateRunes(text, 2600)
+}
+
+func telegramTruncateRunes(text string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= max {
+		return text
+	}
+	return strings.TrimSpace(string(runes[:max])) + "\n... truncated"
+}
+
 func postTelegramMessage(ctx context.Context, token string, chatID int64, text string) error {
 	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(text) == "" {
 		return nil
@@ -363,11 +656,13 @@ func postTelegramMessage(ctx context.Context, token string, chatID int64, text s
 }
 
 func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64, text string) error {
-	richPayload := map[string]any{
-		"chat_id":    chatID,
-		"text":       telegramHTMLMessage(text),
-		"parse_mode": "HTML",
-	}
+	return postTelegramPayload(ctx, endpoint, map[string]any{"chat_id": chatID}, text)
+}
+
+func postTelegramPayload(ctx context.Context, endpoint string, payload map[string]any, text string) error {
+	richPayload := copyTelegramPayload(payload)
+	richPayload["text"] = telegramHTMLMessage(text)
+	richPayload["parse_mode"] = "HTML"
 	if err := postJSON(ctx, endpoint, "", richPayload); err == nil {
 		return nil
 	} else if !strings.Contains(err.Error(), "400 Bad Request") {
@@ -377,12 +672,21 @@ func postTelegramMessageChunk(ctx context.Context, endpoint string, chatID int64
 		if plain == "" {
 			return err
 		}
-		fallbackPayload := map[string]any{"chat_id": chatID, "text": plain}
+		fallbackPayload := copyTelegramPayload(payload)
+		fallbackPayload["text"] = plain
 		if fallbackErr := postJSON(ctx, endpoint, "", fallbackPayload); fallbackErr != nil {
 			return fmt.Errorf("telegram rich message failed: %w; plain fallback failed: %v", err, fallbackErr)
 		}
 	}
 	return nil
+}
+
+func copyTelegramPayload(payload map[string]any) map[string]any {
+	out := make(map[string]any, len(payload)+2)
+	for key, value := range payload {
+		out[key] = value
+	}
+	return out
 }
 
 func telegramReplyFormattingInstructions() string {

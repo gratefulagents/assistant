@@ -3,8 +3,10 @@
 package assistant
 
 import (
+	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gratefulagents/sdk/pkg/agentsdk"
 	sdkpolicy "github.com/gratefulagents/sdk/pkg/agentsdk/policy"
@@ -16,9 +18,35 @@ const (
 )
 
 type conversationSession struct {
-	mu      sync.Mutex
-	mode    string
-	history []agentsdk.RunItem
+	mu              sync.Mutex
+	mode            string
+	history         []agentsdk.RunItem
+	stateMu         sync.Mutex
+	running         bool
+	approvalMu      sync.Mutex
+	pendingApproval *conversationApproval
+}
+
+type approvalDecision struct {
+	Approved bool
+	Reason   string
+}
+
+type conversationApproval struct {
+	ID        string
+	ToolName  string
+	Input     json.RawMessage
+	CallID    string
+	CreatedAt time.Time
+	Decision  chan approvalDecision
+}
+
+type conversationApprovalSnapshot struct {
+	ID        string
+	ToolName  string
+	Input     json.RawMessage
+	CallID    string
+	CreatedAt time.Time
 }
 
 func newConversationSession() *conversationSession {
@@ -47,6 +75,116 @@ func (s *conversationSession) setModeLocked(mode string) string {
 func (s *conversationSession) clearHistoryLocked() {
 	if s != nil {
 		s.history = nil
+	}
+}
+
+func (s *conversationSession) beginRun() bool {
+	if s == nil {
+		return true
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	if s.running {
+		return false
+	}
+	s.running = true
+	return true
+}
+
+func (s *conversationSession) finishRun() {
+	if s == nil {
+		return
+	}
+	s.stateMu.Lock()
+	s.running = false
+	s.stateMu.Unlock()
+	s.clearApproval("")
+}
+
+func (s *conversationSession) isRunning() bool {
+	if s == nil {
+		return false
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	return s.running
+}
+
+func (s *conversationSession) openApproval(id string, pending *agentsdk.Interruption) (*conversationApproval, bool) {
+	if s == nil || pending == nil || strings.TrimSpace(id) == "" {
+		return nil, false
+	}
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	if s.pendingApproval != nil {
+		return nil, false
+	}
+	approval := &conversationApproval{
+		ID:        strings.TrimSpace(id),
+		ToolName:  pending.ToolName,
+		Input:     cloneRaw(pending.ToolInput),
+		CallID:    pending.ToolCallID,
+		CreatedAt: time.Now(),
+		Decision:  make(chan approvalDecision, 1),
+	}
+	s.pendingApproval = approval
+	return approval, true
+}
+
+func (s *conversationSession) pendingApprovalSnapshot() (conversationApprovalSnapshot, bool) {
+	if s == nil {
+		return conversationApprovalSnapshot{}, false
+	}
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	if s.pendingApproval == nil {
+		return conversationApprovalSnapshot{}, false
+	}
+	return s.pendingApproval.snapshot(), true
+}
+
+func (s *conversationSession) decideApproval(id string, decision approvalDecision) (conversationApprovalSnapshot, bool) {
+	if s == nil || strings.TrimSpace(id) == "" {
+		return conversationApprovalSnapshot{}, false
+	}
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	if s.pendingApproval == nil || s.pendingApproval.ID != id {
+		return conversationApprovalSnapshot{}, false
+	}
+	approval := s.pendingApproval
+	s.pendingApproval = nil
+	select {
+	case approval.Decision <- decision:
+	default:
+	}
+	return approval.snapshot(), true
+}
+
+func (s *conversationSession) clearApproval(id string) {
+	if s == nil {
+		return
+	}
+	s.approvalMu.Lock()
+	defer s.approvalMu.Unlock()
+	if s.pendingApproval == nil {
+		return
+	}
+	if strings.TrimSpace(id) == "" || s.pendingApproval.ID == id {
+		s.pendingApproval = nil
+	}
+}
+
+func (a *conversationApproval) snapshot() conversationApprovalSnapshot {
+	if a == nil {
+		return conversationApprovalSnapshot{}
+	}
+	return conversationApprovalSnapshot{
+		ID:        a.ID,
+		ToolName:  a.ToolName,
+		Input:     cloneRaw(a.Input),
+		CallID:    a.CallID,
+		CreatedAt: a.CreatedAt,
 	}
 }
 

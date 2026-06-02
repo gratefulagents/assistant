@@ -3,6 +3,7 @@
 package assistant
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -36,6 +37,44 @@ func TestConversationKeyPrefersThreadThenUser(t *testing.T) {
 	}
 	if got := conversationKey(inboundMessage{Channel: "generic", UserID: "Alice@example.com"}); got != "generic:alice@example.com" {
 		t.Fatalf("conversationKey with user fallback = %q", got)
+	}
+}
+
+func TestConversationApprovalDecisionClearsPendingRequest(t *testing.T) {
+	session := newConversationSession()
+	pending := &agentsdk.Interruption{
+		ToolName:   "shell",
+		ToolInput:  json.RawMessage(`{"command":"pwd"}`),
+		ToolCallID: "call-1",
+	}
+	approval, ok := session.openApproval("approval-1", pending)
+	if !ok {
+		t.Fatal("openApproval rejected first pending approval")
+	}
+	snapshot, ok := session.pendingApprovalSnapshot()
+	if !ok || snapshot.ID != "approval-1" || snapshot.ToolName != "shell" {
+		t.Fatalf("pending approval snapshot = %#v, ok=%v", snapshot, ok)
+	}
+	if _, ok := session.openApproval("approval-2", pending); ok {
+		t.Fatal("openApproval allowed a second pending approval")
+	}
+	decided, ok := session.decideApproval("approval-1", approvalDecision{Approved: true})
+	if !ok || decided.ID != "approval-1" {
+		t.Fatalf("decideApproval = %#v, ok=%v", decided, ok)
+	}
+	select {
+	case decision := <-approval.Decision:
+		if !decision.Approved {
+			t.Fatal("decision channel received denial, want approval")
+		}
+	default:
+		t.Fatal("decision channel did not receive approval")
+	}
+	if _, ok := session.pendingApprovalSnapshot(); ok {
+		t.Fatal("approval remained pending after decision")
+	}
+	if _, ok := session.decideApproval("approval-1", approvalDecision{Approved: false}); ok {
+		t.Fatal("decideApproval accepted a stale decision")
 	}
 }
 

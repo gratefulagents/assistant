@@ -654,6 +654,40 @@ func TestTelegramCallbackCommandAllowList(t *testing.T) {
 	}
 }
 
+func TestTelegramApprovalCallbackParsing(t *testing.T) {
+	id, approved, ok := telegramApprovalCallback("assistant:approval:req-1:approve")
+	if !ok || id != "req-1" || !approved {
+		t.Fatalf("approve callback parsed as id=%q approved=%v ok=%v", id, approved, ok)
+	}
+	id, approved, ok = telegramApprovalCallback("assistant:approval:req-2:deny")
+	if !ok || id != "req-2" || approved {
+		t.Fatalf("deny callback parsed as id=%q approved=%v ok=%v", id, approved, ok)
+	}
+	for _, input := range []string{"", "assistant:/clear", "assistant:approval::approve", "assistant:approval:req-3:maybe"} {
+		if _, _, ok := telegramApprovalCallback(input); ok {
+			t.Fatalf("telegramApprovalCallback(%q) accepted invalid callback", input)
+		}
+	}
+}
+
+func TestTelegramApprovalTextDecision(t *testing.T) {
+	for _, input := range []string{"y", "yes", "approve", "/approve", "allow"} {
+		approved, ok := telegramApprovalTextDecision(input)
+		if !ok || !approved {
+			t.Fatalf("telegramApprovalTextDecision(%q) = %v, %v; want approval", input, approved, ok)
+		}
+	}
+	for _, input := range []string{"n", "no", "deny", "/deny", "reject"} {
+		approved, ok := telegramApprovalTextDecision(input)
+		if !ok || approved {
+			t.Fatalf("telegramApprovalTextDecision(%q) = %v, %v; want denial", input, approved, ok)
+		}
+	}
+	if _, ok := telegramApprovalTextDecision("run something else"); ok {
+		t.Fatal("telegramApprovalTextDecision accepted unrelated text")
+	}
+}
+
 func TestTelegramBotCommandsIncludeChatControls(t *testing.T) {
 	data, err := json.Marshal(telegramBotCommands())
 	if err != nil {
