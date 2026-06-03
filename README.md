@@ -217,6 +217,8 @@ standalone scheduler process.
 --audit-log         append-only audit JSONL path
 --transcripts       persist redacted transcripts for session_search
 --transcript-log    append-only transcript JSONL path
+--memory-review     after-turn memory review: off, preview, or apply
+--memory-review-limit  max transcript turns for after-turn review
 --memory-reviewer-model  model override for LLM-backed memory_review
 --memory-reviewer-timeout  memory_review timeout in seconds
 ```
@@ -244,7 +246,8 @@ bot menu and adds inline action buttons to assistant replies. Completed turns
 are persisted as redacted transcripts by default, separate from curated durable
 memory, so the model can use `session_search` for prior chat history and
 `memory_distill` or the LLM-backed `memory_review` to preview or apply stable
-memory candidates from recent transcripts.
+memory candidates from recent transcripts. After-turn review is opt-in with
+`--memory-review preview` or `--memory-review apply`.
 
 ## Security
 

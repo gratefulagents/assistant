@@ -146,6 +146,13 @@ Use `memory_distill` for a fast deterministic scan. Use `memory_review` when
 you want the reviewer model to interpret transcript chunks more broadly. Add
 `"include_heuristic": true` to `memory_review` to combine both candidate sets.
 
+After-turn review is opt-in. Set `--memory-review preview` to run
+`memory_review` after each completed turn and log candidate memories without
+saving them. Set `--memory-review apply` to automatically save validated,
+non-duplicate candidates. This uses recent transcript turns from the just
+completed run and the same reviewer safeguards as the manual `memory_review`
+tool.
+
 For a daily memory review, create a scheduled prompt such as:
 
 ```text

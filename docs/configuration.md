@@ -76,6 +76,8 @@ ASSISTANT_APPROVAL             true
 ASSISTANT_APPROVALS_REVIEWER   user
 ASSISTANT_APPROVALS_REVIEWER_MODEL  (unset; uses main model)
 ASSISTANT_APPROVALS_REVIEWER_TIMEOUT 90
+ASSISTANT_MEMORY_REVIEW         off
+ASSISTANT_MEMORY_REVIEW_LIMIT   8
 ASSISTANT_MEMORY_REVIEWER_MODEL  (unset; uses main model)
 ASSISTANT_MEMORY_REVIEWER_TIMEOUT 90
 ASSISTANT_GUARDRAILS           true
@@ -108,9 +110,15 @@ Assistant also exposes `memory_distill` for deterministic scans and
 stable memory candidates from recent transcripts. `memory_review` uses the main
 model by default; override it with `--memory-reviewer-model` or
 `ASSISTANT_MEMORY_REVIEWER_MODEL`, and tune its timeout with
-`--memory-reviewer-timeout` or `ASSISTANT_MEMORY_REVIEWER_TIMEOUT`. Set
-`ASSISTANT_TRANSCRIPTS=false` or `--transcripts=false` to disable transcript
-persistence and transcript-backed tools.
+`--memory-reviewer-timeout` or `ASSISTANT_MEMORY_REVIEWER_TIMEOUT`.
+After-turn review is disabled by default. Set `--memory-review preview` or
+`ASSISTANT_MEMORY_REVIEW=preview` to run a review after each completed turn and
+log candidate memories without saving them. Set it to `apply` to automatically
+save validated non-duplicate candidates. `--memory-review-limit` and
+`ASSISTANT_MEMORY_REVIEW_LIMIT` control how many recent transcript turns the
+after-turn reviewer may inspect. Set `ASSISTANT_TRANSCRIPTS=false` or
+`--transcripts=false` to disable transcript persistence and transcript-backed
+tools.
 
 ## Hybrid Memory Recall
 

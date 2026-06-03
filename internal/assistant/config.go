@@ -58,6 +58,8 @@ type appConfig struct {
 	ApprovalsReviewer           string
 	ApprovalsReviewerModel      string
 	ApprovalsReviewerTimeout    int
+	MemoryReviewMode            string
+	MemoryReviewLimit           int
 	MemoryReviewerModel         string
 	MemoryReviewerTimeout       int
 	ApprovalsReviewerFlagSet    bool
@@ -134,6 +136,8 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.ApprovalsReviewer, "approvals-reviewer", cfg.ApprovalsReviewer, "approval reviewer: user or auto-review")
 	fs.StringVar(&cfg.ApprovalsReviewerModel, "approvals-reviewer-model", cfg.ApprovalsReviewerModel, "model override for --approvals-reviewer auto-review")
 	fs.IntVar(&cfg.ApprovalsReviewerTimeout, "approvals-reviewer-timeout", cfg.ApprovalsReviewerTimeout, "auto-review approval timeout in seconds")
+	fs.StringVar(&cfg.MemoryReviewMode, "memory-review", cfg.MemoryReviewMode, "after-turn memory review: off, preview, or apply")
+	fs.IntVar(&cfg.MemoryReviewLimit, "memory-review-limit", cfg.MemoryReviewLimit, "maximum recent transcript turns for after-turn memory review")
 	fs.StringVar(&cfg.MemoryReviewerModel, "memory-reviewer-model", cfg.MemoryReviewerModel, "model override for LLM-backed memory_review")
 	fs.IntVar(&cfg.MemoryReviewerTimeout, "memory-reviewer-timeout", cfg.MemoryReviewerTimeout, "memory_review timeout in seconds")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
@@ -217,6 +221,8 @@ func defaultConfig() appConfig {
 		ApprovalsReviewer:         firstNonEmpty(os.Getenv("ASSISTANT_APPROVALS_REVIEWER"), approvalReviewerUser),
 		ApprovalsReviewerModel:    strings.TrimSpace(os.Getenv("ASSISTANT_APPROVALS_REVIEWER_MODEL")),
 		ApprovalsReviewerTimeout:  envInt("ASSISTANT_APPROVALS_REVIEWER_TIMEOUT", 90),
+		MemoryReviewMode:          firstNonEmpty(os.Getenv("ASSISTANT_MEMORY_REVIEW"), memoryReviewModeOff),
+		MemoryReviewLimit:         envInt("ASSISTANT_MEMORY_REVIEW_LIMIT", 8),
 		MemoryReviewerModel:       strings.TrimSpace(os.Getenv("ASSISTANT_MEMORY_REVIEWER_MODEL")),
 		MemoryReviewerTimeout:     envInt("ASSISTANT_MEMORY_REVIEWER_TIMEOUT", 90),
 		EnableGuardrails:          envBool("ASSISTANT_GUARDRAILS", true),
@@ -280,6 +286,16 @@ func (c *appConfig) validate() error {
 	if c.MemoryReviewerTimeout <= 0 {
 		c.MemoryReviewerTimeout = 90
 	}
+	c.MemoryReviewMode = normalizeMemoryReviewMode(c.MemoryReviewMode)
+	if c.MemoryReviewMode == "" {
+		return errors.New("--memory-review must be off, preview, or apply")
+	}
+	if c.MemoryReviewLimit <= 0 {
+		c.MemoryReviewLimit = 8
+	}
+	if c.MemoryReviewLimit > 50 {
+		c.MemoryReviewLimit = 50
+	}
 	c.AuditLevel = normalizeAuditLevel(c.AuditLevel)
 	if c.AuditLevel == "" {
 		return errors.New("--audit-level must be low or full")
@@ -321,6 +337,16 @@ func (c *appConfig) validate() error {
 	}
 	if c.MemoryReviewerTimeout <= 0 {
 		c.MemoryReviewerTimeout = 90
+	}
+	c.MemoryReviewMode = normalizeMemoryReviewMode(c.MemoryReviewMode)
+	if c.MemoryReviewMode == "" {
+		return errors.New("--memory-review must be off, preview, or apply")
+	}
+	if c.MemoryReviewLimit <= 0 {
+		c.MemoryReviewLimit = 8
+	}
+	if c.MemoryReviewLimit > 50 {
+		c.MemoryReviewLimit = 50
 	}
 
 	switch c.Provider {
@@ -454,6 +480,7 @@ extension config:
   --audit-level LEVEL       audit verbosity: low or full
   --audit-log PATH          append audit JSONL to PATH
   --transcripts             persist redacted transcripts for session_search
+  --memory-review MODE      after-turn memory review: off, preview, or apply
   --memory-reviewer-model MODEL  model override for memory_review
 
 examples:

@@ -132,6 +132,7 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, strings.TrimSpace(result.FinalText())); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
+			triggerAfterTurnMemoryReview(ctx, cfg, started, stderr, meta.Channel != "cli")
 			return nil
 		}
 
