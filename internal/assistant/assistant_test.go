@@ -501,7 +501,15 @@ func TestDurableMemoryToolsAreModelDriven(t *testing.T) {
 	for _, tool := range extensions.ExtraTools {
 		names[tool.Name()] = true
 	}
-	for _, want := range []string{"memory_remember", "memory_recall", "memory_list", "prime_context"} {
+	for _, want := range []string{
+		"memory_remember",
+		"memory_recall",
+		"memory_list",
+		"memory_update",
+		"memory_delete",
+		"memory_stats",
+		"prime_context",
+	} {
 		if !names[want] {
 			t.Fatalf("missing durable memory tool %q; names=%v", want, names)
 		}
