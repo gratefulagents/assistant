@@ -119,7 +119,7 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 		}
 		label := scheduleLabel(entry)
 		fmt.Fprintf(stderr, "assistant schedule %s running\n", label)
-		reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry), stdout, stderr)
+		reply, runErr := runScheduledPromptText(ctx, cfg, entry, stdout, stderr)
 		if runErr != nil {
 			_ = finishScheduleRun(cfg, entry.ID, "", runErr)
 			fmt.Fprintf(stderr, "assistant schedule %s failed: %v\n", label, runErr)
@@ -147,7 +147,7 @@ func runScheduleNow(ctx context.Context, cfg appConfig, in scheduleRunInput, std
 	if stderr != nil {
 		fmt.Fprintf(stderr, "assistant schedule %s running manually\n", label)
 	}
-	reply, runErr := runPromptText(ctx, cfg, scheduledPrompt(entry), stdout, stderr)
+	reply, runErr := runScheduledPromptText(ctx, cfg, entry, stdout, stderr)
 	deliveryErr := error(nil)
 	if runErr == nil {
 		deliveryErr = deliverScheduleOutput(ctx, cfg, entry, reply)
@@ -170,6 +170,16 @@ func runScheduleNow(ctx context.Context, cfg appConfig, in scheduleRunInput, std
 func scheduledPrompt(entry scheduleEntry) string {
 	label := scheduleLabel(entry)
 	return "Scheduled assistant job " + label + " is due. Run this scheduled prompt:\n\n" + strings.TrimSpace(entry.Prompt)
+}
+
+func runScheduledPromptText(ctx context.Context, cfg appConfig, entry scheduleEntry, stdout, stderr io.Writer) (string, error) {
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, scheduledPrompt(entry), stdout, stderr, nil, nil, transcriptContext{
+		SessionID:      "schedule_" + entry.ID,
+		ConversationID: "schedule:" + entry.ID,
+		Channel:        "schedule",
+		Thread:         entry.ID,
+		UserText:       strings.TrimSpace(entry.Prompt),
+	})
 }
 
 func scheduleLabel(entry scheduleEntry) string {

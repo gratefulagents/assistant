@@ -20,6 +20,7 @@ const (
 type conversationSession struct {
 	mu              sync.Mutex
 	mode            string
+	transcriptID    string
 	history         []agentsdk.RunItem
 	stateMu         sync.Mutex
 	running         bool
@@ -50,7 +51,7 @@ type conversationApprovalSnapshot struct {
 }
 
 func newConversationSession() *conversationSession {
-	return &conversationSession{mode: conversationModeChat}
+	return &conversationSession{mode: conversationModeChat, transcriptID: newTranscriptID("sess")}
 }
 
 func (s *conversationSession) currentModeLocked() string {

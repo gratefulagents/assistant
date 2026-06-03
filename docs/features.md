@@ -39,6 +39,28 @@ in-process histories for each conversation while the process is running.
 Telegram keys conversations by chat ID, Gmail by thread ID, and the gateway by
 `thread_id` with `user_id` as a fallback.
 
+Assistant also persists redacted completed turns to
+`~/.gratefulagents/assistant/state/transcripts.ndjson` by default. This is
+separate from curated durable memory: transcripts make past chats searchable,
+while `memory_remember` stores stable facts and preferences. The model can use
+the read-only `session_search` tool to browse recent sessions, search prior
+turns, or scroll around a specific turn. Disable transcript persistence with
+`--transcripts=false` or `ASSISTANT_TRANSCRIPTS=false`.
+
+Typical `session_search` calls:
+
+```json
+{"query": "the trip plan", "limit": 5}
+```
+
+```json
+{"session_id": "sess_20260603T090000.000000000Z_abcd", "limit": 10}
+```
+
+```json
+{"session_id": "sess_...", "around_turn_id": "turn_...", "window": 3}
+```
+
 ## One-Shot Prompt
 
 Pass a prompt as positional arguments:
@@ -98,6 +120,42 @@ Project-state tools are enabled by default and backed by files under
 Memory is model-driven: the host exposes memory tools, and the model decides
 when to call `memory_recall`, `memory_remember`, `memory_list`, and
 `prime_context`.
+
+When transcripts and project state are both enabled, Assistant also exposes
+`memory_distill`. Its default `preview` action scans recent transcripts for
+clear user-stated preferences, facts, and routines without writing anything.
+Its `apply` action writes non-duplicate candidates into durable memory. Ask for
+a preview before applying when you want to review what will be remembered.
+For a deeper pass, use `memory_review`; it runs a separate no-tools reviewer
+model with a strict JSON schema, then the host validates, deduplicates, and
+writes candidates only if `action=apply`.
+
+Typical review workflow:
+
+```json
+{"action": "preview", "since_hours": 24, "include_skipped": true}
+```
+
+After reviewing the candidates:
+
+```json
+{"action": "apply", "since_hours": 24}
+```
+
+Use `memory_distill` for a fast deterministic scan. Use `memory_review` when
+you want the reviewer model to interpret transcript chunks more broadly. Add
+`"include_heuristic": true` to `memory_review` to combine both candidate sets.
+
+For a daily memory review, create a scheduled prompt such as:
+
+```text
+Run memory_review with action=preview, since_hours=24, and include_heuristic=true.
+Summarize any candidate memories for review, but do not save them unless I
+explicitly ask.
+```
+
+If you want fully automatic promotion of clear candidates, use
+`action=apply` in that scheduled prompt.
 
 Recall is lexical (keyword) by default. Set `ASSISTANT_EMBEDDING_MODEL` to
 enable embeddings-backed hybrid recall, which fuses keyword matching with

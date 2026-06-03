@@ -65,7 +65,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runPollers(ctx, cfg, stdout, stderr)
 	default:
 		if strings.TrimSpace(cfg.Prompt) != "" {
-			err = runPrompt(ctx, cfg, strings.TrimSpace(cfg.Prompt), stdin, stdout, stderr, nil, conversationModeChat)
+			prompt := strings.TrimSpace(cfg.Prompt)
+			err = runPrompt(ctx, cfg, prompt, stdin, stdout, stderr, nil, conversationModeChat, transcriptContext{
+				SessionID:      newTranscriptID("sess"),
+				ConversationID: "cli:prompt",
+				Channel:        "cli",
+				UserText:       prompt,
+			})
 		} else {
 			err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, func(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
 				return runREPL(ctx, cfg, stdin, stdout, stderr)

@@ -76,12 +76,16 @@ ASSISTANT_APPROVAL             true
 ASSISTANT_APPROVALS_REVIEWER   user
 ASSISTANT_APPROVALS_REVIEWER_MODEL  (unset; uses main model)
 ASSISTANT_APPROVALS_REVIEWER_TIMEOUT 90
+ASSISTANT_MEMORY_REVIEWER_MODEL  (unset; uses main model)
+ASSISTANT_MEMORY_REVIEWER_TIMEOUT 90
 ASSISTANT_GUARDRAILS           true
 ASSISTANT_COMPACTION           true
 ASSISTANT_PRIVATE_NETWORK      false
 ASSISTANT_AUDIT                false
 ASSISTANT_AUDIT_LEVEL          full
 ASSISTANT_AUDIT_LOG            ~/.gratefulagents/assistant/state/audit.ndjson
+ASSISTANT_TRANSCRIPTS          true
+ASSISTANT_TRANSCRIPT_LOG       ~/.gratefulagents/assistant/state/transcripts.ndjson
 ```
 
 `--permission read-only` restricts SDK tool access. `--approval=true` asks
@@ -95,6 +99,18 @@ when no human approval requester exists.
 to stdout, standard logs, and the append-only audit log path. Set
 `--audit-level low` to record only tool calls with inputs, assistant text, and
 errors.
+`--transcripts=true` persists redacted completed turns to the append-only
+transcript log and exposes the read-only `session_search` tool. Transcripts are
+for searchable chat history; durable memory remains curated through the
+project-state memory tools. When transcripts and project state are both enabled,
+Assistant also exposes `memory_distill` for deterministic scans and
+`memory_review` for LLM-backed transcript review. Both can preview or apply
+stable memory candidates from recent transcripts. `memory_review` uses the main
+model by default; override it with `--memory-reviewer-model` or
+`ASSISTANT_MEMORY_REVIEWER_MODEL`, and tune its timeout with
+`--memory-reviewer-timeout` or `ASSISTANT_MEMORY_REVIEWER_TIMEOUT`. Set
+`ASSISTANT_TRANSCRIPTS=false` or `--transcripts=false` to disable transcript
+persistence and transcript-backed tools.
 
 ## Hybrid Memory Recall
 

@@ -40,7 +40,8 @@ func replyToInboundWithApproval(ctx context.Context, cfg appConfig, msg inboundM
 		return command.Reply, nil
 	}
 	prompt := inboundPrompt(msg, text)
-	return runPromptTextWithSessionApproval(ctx, cfg, prompt, stdout, stderr, session, approvals)
+	meta := transcriptContextForInbound(msg, session, text)
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, stdout, stderr, session, approvals, meta)
 }
 
 func inboundPrompt(msg inboundMessage, text string) string {
@@ -71,18 +72,32 @@ func runPromptTextWithSession(ctx context.Context, cfg appConfig, prompt string,
 }
 
 func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester) (string, error) {
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, stdout, stderr, session, approvals, transcriptContext{})
+}
+
+func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester, meta transcriptContext) (string, error) {
 	if stdout == nil {
 		stdout = io.Discard
 	}
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	started := time.Now().UTC()
 	if session != nil {
 		session.mu.Lock()
 		defer session.mu.Unlock()
 		cfg = applyConversationMode(cfg, session.currentModeLocked())
+		if strings.TrimSpace(meta.SessionID) == "" {
+			meta.SessionID = session.transcriptID
+		}
 	} else {
 		cfg = applyConversationMode(cfg, conversationModeChat)
+	}
+	if strings.TrimSpace(meta.Channel) == "" {
+		meta.Channel = "direct"
+	}
+	if strings.TrimSpace(meta.UserText) == "" {
+		meta.UserText = prompt
 	}
 	audit, err := newAuditRecorder(cfg, stdout)
 	if err != nil {
@@ -95,7 +110,9 @@ func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt
 	if session != nil {
 		input = append(input, session.history...)
 	}
-	input = append(input, userMessage(prompt))
+	userItem := userMessage(prompt)
+	input = append(input, userItem)
+	turnItems := []agentsdk.RunItem{userItem}
 
 	items := input
 	approvals = approvalRequesterForConfig(cfg, approvals, stderr, audit)
@@ -125,14 +142,20 @@ func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt
 		for i := range result.NewItems {
 			audit.EmitRunItem(&result.NewItems[i])
 		}
-		items = append(items, cloneRunItems(result.NewItems)...)
+		newItems := cloneRunItems(result.NewItems)
+		items = append(items, newItems...)
+		turnItems = append(turnItems, newItems...)
 		if result.Interruption == nil {
 			closeBundle(bundle, stderr)
 			if session != nil {
 				session.history = items
 			}
 			audit.EmitRunEnd(result)
-			return strings.TrimSpace(result.FinalText()), nil
+			finalText := strings.TrimSpace(result.FinalText())
+			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
+				fmt.Fprintln(stderr, "[log] transcript warning:", err)
+			}
+			return finalText, nil
 		}
 		audit.EmitApprovalRequest(result.Interruption)
 		if approvals == nil {
@@ -154,6 +177,7 @@ func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt
 			audit.EmitRunItem(&approvalItems[i])
 		}
 		items = append(items, approvalItems...)
+		turnItems = append(turnItems, cloneRunItems(approvalItems)...)
 	}
 }
 

@@ -215,6 +215,10 @@ standalone scheduler process.
 --audit             emit structured audit events to stdout and logs
 --audit-level       low or full
 --audit-log         append-only audit JSONL path
+--transcripts       persist redacted transcripts for session_search
+--transcript-log    append-only transcript JSONL path
+--memory-reviewer-model  model override for LLM-backed memory_review
+--memory-reviewer-timeout  memory_review timeout in seconds
 ```
 
 By default, Assistant enables SDK tools, guardrails, compaction, approvals, and
@@ -236,7 +240,11 @@ running process. Telegram keys history by chat, Gmail by thread, and the local
 gateway by `thread_id` with `user_id` as a fallback. Slash commands are handled
 by the host: `/start`, `/help`, `/version`, `/plan`, `/chat`, `/mode <name>`,
 `/clear`, and `/stop`. Telegram also exposes the common commands through its
-bot menu and adds inline action buttons to assistant replies.
+bot menu and adds inline action buttons to assistant replies. Completed turns
+are persisted as redacted transcripts by default, separate from curated durable
+memory, so the model can use `session_search` for prior chat history and
+`memory_distill` or the LLM-backed `memory_review` to preview or apply stable
+memory candidates from recent transcripts.
 
 ## Security
 

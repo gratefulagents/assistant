@@ -58,6 +58,8 @@ type appConfig struct {
 	ApprovalsReviewer           string
 	ApprovalsReviewerModel      string
 	ApprovalsReviewerTimeout    int
+	MemoryReviewerModel         string
+	MemoryReviewerTimeout       int
 	ApprovalsReviewerFlagSet    bool
 	ApprovalsReviewerModelSet   bool
 	ApprovalsReviewerTimeoutSet bool
@@ -67,6 +69,8 @@ type appConfig struct {
 	Audit                       bool
 	AuditLevel                  string
 	AuditLogPath                string
+	EnableTranscripts           bool
+	TranscriptLogPath           string
 	Debug                       bool
 	Command                     string
 	SessionMode                 agentsdk.SessionMode
@@ -130,12 +134,16 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.ApprovalsReviewer, "approvals-reviewer", cfg.ApprovalsReviewer, "approval reviewer: user or auto-review")
 	fs.StringVar(&cfg.ApprovalsReviewerModel, "approvals-reviewer-model", cfg.ApprovalsReviewerModel, "model override for --approvals-reviewer auto-review")
 	fs.IntVar(&cfg.ApprovalsReviewerTimeout, "approvals-reviewer-timeout", cfg.ApprovalsReviewerTimeout, "auto-review approval timeout in seconds")
+	fs.StringVar(&cfg.MemoryReviewerModel, "memory-reviewer-model", cfg.MemoryReviewerModel, "model override for LLM-backed memory_review")
+	fs.IntVar(&cfg.MemoryReviewerTimeout, "memory-reviewer-timeout", cfg.MemoryReviewerTimeout, "memory_review timeout in seconds")
 	fs.BoolVar(&cfg.EnableGuardrails, "guardrails", cfg.EnableGuardrails, "enable SDK guardrails")
 	fs.BoolVar(&cfg.EnableCompaction, "compaction", cfg.EnableCompaction, "enable SDK context compaction")
 	fs.BoolVar(&cfg.AllowPrivateNetwork, "private-network", cfg.AllowPrivateNetwork, "allow web tools to reach private network URLs")
 	fs.BoolVar(&cfg.Audit, "audit", cfg.Audit, "emit structured audit events to stdout and logs")
 	fs.StringVar(&cfg.AuditLevel, "audit-level", cfg.AuditLevel, "audit verbosity: low or full")
 	fs.StringVar(&cfg.AuditLogPath, "audit-log", cfg.AuditLogPath, "append-only audit log path; defaults to state-dir/audit.ndjson")
+	fs.BoolVar(&cfg.EnableTranscripts, "transcripts", cfg.EnableTranscripts, "persist redacted conversation transcripts for session_search")
+	fs.StringVar(&cfg.TranscriptLogPath, "transcript-log", cfg.TranscriptLogPath, "append-only transcript JSONL path; defaults to state-dir/transcripts.ndjson")
 	fs.BoolVar(&cfg.Debug, "debug", cfg.Debug, "enable SDK debug logging")
 	fs.StringVar(&cfg.GatewayAddr, "addr", cfg.GatewayAddr, "gateway listen address for serve mode")
 	fs.StringVar(&cfg.GatewayToken, "gateway-token", cfg.GatewayToken, "bearer token for generic gateway endpoint")
@@ -209,12 +217,16 @@ func defaultConfig() appConfig {
 		ApprovalsReviewer:         firstNonEmpty(os.Getenv("ASSISTANT_APPROVALS_REVIEWER"), approvalReviewerUser),
 		ApprovalsReviewerModel:    strings.TrimSpace(os.Getenv("ASSISTANT_APPROVALS_REVIEWER_MODEL")),
 		ApprovalsReviewerTimeout:  envInt("ASSISTANT_APPROVALS_REVIEWER_TIMEOUT", 90),
+		MemoryReviewerModel:       strings.TrimSpace(os.Getenv("ASSISTANT_MEMORY_REVIEWER_MODEL")),
+		MemoryReviewerTimeout:     envInt("ASSISTANT_MEMORY_REVIEWER_TIMEOUT", 90),
 		EnableGuardrails:          envBool("ASSISTANT_GUARDRAILS", true),
 		EnableCompaction:          envBool("ASSISTANT_COMPACTION", true),
 		AllowPrivateNetwork:       envBool("ASSISTANT_PRIVATE_NETWORK", false),
 		Audit:                     envBool("ASSISTANT_AUDIT", false),
 		AuditLevel:                firstNonEmpty(os.Getenv("ASSISTANT_AUDIT_LEVEL"), auditLevelFull),
 		AuditLogPath:              strings.TrimSpace(os.Getenv("ASSISTANT_AUDIT_LOG")),
+		EnableTranscripts:         envBool("ASSISTANT_TRANSCRIPTS", true),
+		TranscriptLogPath:         strings.TrimSpace(os.Getenv("ASSISTANT_TRANSCRIPT_LOG")),
 		GatewayAddr:               firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
 		GatewayToken:              strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
 		TelegramBotToken:          strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
@@ -252,6 +264,7 @@ func (c *appConfig) validate() error {
 	}
 	c.ConfigPath = expandUserPath(c.ConfigPath)
 	c.AuditLogPath = expandUserPath(c.AuditLogPath)
+	c.TranscriptLogPath = expandUserPath(c.TranscriptLogPath)
 	c.SkillCatalogPath = expandUserPath(c.SkillCatalogPath)
 	c.OpenAIOAuthPath = expandUserPath(c.OpenAIOAuthPath)
 	c.OpenAIAccountIDPath = expandUserPath(c.OpenAIAccountIDPath)
@@ -263,6 +276,9 @@ func (c *appConfig) validate() error {
 	}
 	if c.ApprovalsReviewerTimeout <= 0 {
 		c.ApprovalsReviewerTimeout = 90
+	}
+	if c.MemoryReviewerTimeout <= 0 {
+		c.MemoryReviewerTimeout = 90
 	}
 	c.AuditLevel = normalizeAuditLevel(c.AuditLevel)
 	if c.AuditLevel == "" {
@@ -288,6 +304,9 @@ func (c *appConfig) validate() error {
 	if c.Audit && strings.TrimSpace(c.AuditLogPath) == "" {
 		c.AuditLogPath = stateFilePath(*c, "audit.ndjson")
 	}
+	if c.EnableTranscripts && strings.TrimSpace(c.TranscriptLogPath) == "" {
+		c.TranscriptLogPath = stateFilePath(*c, transcriptStateFileName)
+	}
 
 	if err := c.loadFileConfig(); err != nil {
 		return err
@@ -299,6 +318,9 @@ func (c *appConfig) validate() error {
 	}
 	if c.ApprovalsReviewerTimeout <= 0 {
 		c.ApprovalsReviewerTimeout = 90
+	}
+	if c.MemoryReviewerTimeout <= 0 {
+		c.MemoryReviewerTimeout = 90
 	}
 
 	switch c.Provider {
@@ -431,6 +453,8 @@ extension config:
   --audit                   emit structured audit events to stdout and logs
   --audit-level LEVEL       audit verbosity: low or full
   --audit-log PATH          append audit JSONL to PATH
+  --transcripts             persist redacted transcripts for session_search
+  --memory-reviewer-model MODEL  model override for memory_review
 
 examples:
   assistant version

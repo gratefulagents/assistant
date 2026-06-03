@@ -87,6 +87,13 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 	if cfg.EnableScheduling {
 		bundle.ExtraTools = append(bundle.ExtraTools, scheduleTools(cfg)...)
 	}
+	if cfg.EnableTranscripts {
+		bundle.ExtraTools = append(bundle.ExtraTools, sessionSearchTools(cfg)...)
+	}
+	if cfg.EnableTranscripts && cfg.EnableProjectState {
+		bundle.ExtraTools = append(bundle.ExtraTools, memoryDistillTools(cfg)...)
+		bundle.ExtraTools = append(bundle.ExtraTools, memoryReviewTools(cfg)...)
+	}
 	if cfg.EnableSkills {
 		tools, err := skillTools(cfg)
 		if err != nil {

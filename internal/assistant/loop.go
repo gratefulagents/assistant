@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/gratefulagents/sdk/pkg/agentsdk"
 )
@@ -48,7 +49,7 @@ func runREPL(ctx context.Context, cfg appConfig, stdin io.Reader, stdout, stderr
 			continue
 		}
 		session.mu.Lock()
-		runErr := runPrompt(ctx, cfg, prompt, reader, stdout, stderr, &session.history, session.currentModeLocked())
+		runErr := runPrompt(ctx, cfg, prompt, reader, stdout, stderr, &session.history, session.currentModeLocked(), transcriptContextForTerminal(session, prompt))
 		session.mu.Unlock()
 		if runErr != nil {
 			return runErr
@@ -60,8 +61,15 @@ func runREPL(ctx context.Context, cfg appConfig, stdin io.Reader, stdout, stderr
 	return nil
 }
 
-func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.Reader, stdout, stderr io.Writer, history *[]agentsdk.RunItem, mode string) error {
+func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.Reader, stdout, stderr io.Writer, history *[]agentsdk.RunItem, mode string, meta transcriptContext) error {
 	cfg = applyConversationMode(cfg, mode)
+	started := time.Now().UTC()
+	if strings.TrimSpace(meta.Channel) == "" {
+		meta.Channel = "terminal"
+	}
+	if strings.TrimSpace(meta.UserText) == "" {
+		meta.UserText = prompt
+	}
 	audit, err := newAuditRecorder(cfg, stdout)
 	if err != nil {
 		return err
@@ -77,7 +85,9 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 	if history != nil {
 		items = append(items, (*history)...)
 	}
-	items = append(items, userMessage(prompt))
+	userItem := userMessage(prompt)
+	items = append(items, userItem)
+	turnItems := []agentsdk.RunItem{userItem}
 	approvals := approvalRequesterForConfig(cfg, terminalApprovalRequester{input: approvalIn, stderr: stderr}, stderr, audit)
 
 	for resumes := 0; ; resumes++ {
@@ -110,13 +120,18 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 			fmt.Fprintln(stdout)
 		}
 
-		items = append(items, cloneRunItems(result.NewItems)...)
+		newItems := cloneRunItems(result.NewItems)
+		items = append(items, newItems...)
+		turnItems = append(turnItems, newItems...)
 		if result.Interruption == nil {
 			closeBundle(bundle, stderr)
 			if history != nil {
 				*history = items
 			}
 			audit.EmitRunEnd(result)
+			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, strings.TrimSpace(result.FinalText())); err != nil {
+				fmt.Fprintln(stderr, "[log] transcript warning:", err)
+			}
 			return nil
 		}
 
@@ -134,5 +149,6 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 			audit.EmitRunItem(&approvalItems[i])
 		}
 		items = append(items, approvalItems...)
+		turnItems = append(turnItems, cloneRunItems(approvalItems)...)
 	}
 }
