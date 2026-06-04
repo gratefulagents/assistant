@@ -173,7 +173,7 @@ func scheduledPrompt(entry scheduleEntry) string {
 }
 
 func runScheduledPromptText(ctx context.Context, cfg appConfig, entry scheduleEntry, stdout, stderr io.Writer) (string, error) {
-	return runPromptTextWithSessionApprovalMeta(ctx, cfg, scheduledPrompt(entry), stdout, stderr, nil, nil, transcriptContext{
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, scheduledPrompt(entry), nil, stdout, stderr, nil, nil, transcriptContext{
 		SessionID:      "schedule_" + entry.ID,
 		ConversationID: "schedule:" + entry.ID,
 		Channel:        "schedule",

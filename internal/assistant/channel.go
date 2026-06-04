@@ -23,6 +23,7 @@ type inboundMessage struct {
 	UserID  string
 	Thread  string
 	Text    string
+	Images  []agentsdk.ImageAttachment
 	Raw     json.RawMessage
 }
 
@@ -32,7 +33,7 @@ func replyToInbound(ctx context.Context, cfg appConfig, msg inboundMessage, stdo
 
 func replyToInboundWithApproval(ctx context.Context, cfg appConfig, msg inboundMessage, stdout, stderr io.Writer, conversations *conversationStore, approvals approvalRequester) (string, error) {
 	text := strings.TrimSpace(msg.Text)
-	if text == "" {
+	if text == "" && len(msg.Images) == 0 {
 		return "", errors.New("empty message")
 	}
 	session := conversations.sessionFor(msg)
@@ -41,7 +42,7 @@ func replyToInboundWithApproval(ctx context.Context, cfg appConfig, msg inboundM
 	}
 	prompt := inboundPrompt(msg, text)
 	meta := transcriptContextForInbound(msg, session, text)
-	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, stdout, stderr, session, approvals, meta)
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, msg.Images, stdout, stderr, session, approvals, meta)
 }
 
 func inboundPrompt(msg inboundMessage, text string) string {
@@ -59,6 +60,13 @@ func inboundPrompt(msg inboundMessage, text string) string {
 		}
 		prompt += "\n\n" + telegramReplyFormattingInstructions()
 	}
+	if len(msg.Images) > 0 {
+		noun := "image"
+		if len(msg.Images) > 1 {
+			noun = "images"
+		}
+		prompt += fmt.Sprintf("\n\nThe user attached %d %s, included with this message.", len(msg.Images), noun)
+	}
 	prompt += "\n\nMessage:\n\n" + text
 	return prompt
 }
@@ -72,10 +80,14 @@ func runPromptTextWithSession(ctx context.Context, cfg appConfig, prompt string,
 }
 
 func runPromptTextWithSessionApproval(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester) (string, error) {
-	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, stdout, stderr, session, approvals, transcriptContext{})
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, nil, stdout, stderr, session, approvals, transcriptContext{})
 }
 
-func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, prompt string, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester, meta transcriptContext) (string, error) {
+func runPromptTextWithSessionApprovalImages(ctx context.Context, cfg appConfig, prompt string, images []agentsdk.ImageAttachment, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester) (string, error) {
+	return runPromptTextWithSessionApprovalMeta(ctx, cfg, prompt, images, stdout, stderr, session, approvals, transcriptContext{})
+}
+
+func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, prompt string, images []agentsdk.ImageAttachment, stdout, stderr io.Writer, session *conversationSession, approvals approvalRequester, meta transcriptContext) (string, error) {
 	if stdout == nil {
 		stdout = io.Discard
 	}
@@ -110,7 +122,7 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 	if session != nil {
 		input = append(input, session.history...)
 	}
-	userItem := userMessage(prompt)
+	userItem := userMessageWithImages(prompt, images)
 	input = append(input, userItem)
 	turnItems := []agentsdk.RunItem{userItem}
 

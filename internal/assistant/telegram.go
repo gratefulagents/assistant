@@ -5,6 +5,7 @@ package assistant
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +24,14 @@ import (
 )
 
 const telegramAPIBase = "https://api.telegram.org/bot"
+const telegramFileAPIBase = "https://api.telegram.org/file/bot"
 const telegramMessageChunkRunes = 3800
+const telegramMaxImageBytes = 12 << 20
+const telegramMaxInboundImages = 8
+
+// Base URLs are vars so tests can point them at a stub server.
+var telegramAPIBaseURL = telegramAPIBase
+var telegramFileAPIBaseURL = telegramFileAPIBase
 
 var telegramApprovalSeq atomic.Uint64
 
@@ -40,10 +48,27 @@ type telegramUpdate struct {
 type telegramMessage struct {
 	MessageID int64  `json:"message_id"`
 	Text      string `json:"text"`
+	Caption   string `json:"caption"`
 	Chat      struct {
 		ID int64 `json:"id"`
 	} `json:"chat"`
-	From telegramUser `json:"from"`
+	From     telegramUser        `json:"from"`
+	Photo    []telegramPhotoSize `json:"photo"`
+	Document *telegramDocument   `json:"document"`
+}
+
+type telegramPhotoSize struct {
+	FileID   string `json:"file_id"`
+	FileSize int64  `json:"file_size"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+}
+
+type telegramDocument struct {
+	FileID   string `json:"file_id"`
+	FileName string `json:"file_name"`
+	MimeType string `json:"mime_type"`
+	FileSize int64  `json:"file_size"`
 }
 
 type telegramCallbackQuery struct {
@@ -186,12 +211,172 @@ func decodeTelegramUpdates(data []byte) (telegramUpdatesResponse, error) {
 	return out, err
 }
 
+type telegramFileResponse struct {
+	OK          bool   `json:"ok"`
+	Description string `json:"description"`
+	Result      struct {
+		FileID   string `json:"file_id"`
+		FilePath string `json:"file_path"`
+		FileSize int64  `json:"file_size"`
+	} `json:"result"`
+}
+
+// downloadTelegramImages collects image attachments (photos and image documents)
+// from an inbound message and returns them as base64-encoded attachments.
+func downloadTelegramImages(ctx context.Context, token string, message telegramMessage) ([]agentsdk.ImageAttachment, error) {
+	type pending struct {
+		fileID    string
+		mediaType string
+	}
+	var queue []pending
+	if photo, ok := largestTelegramPhoto(message.Photo); ok {
+		queue = append(queue, pending{fileID: photo.FileID, mediaType: "image/jpeg"})
+	}
+	if doc := message.Document; doc != nil {
+		mediaType := strings.ToLower(strings.TrimSpace(doc.MimeType))
+		if telegramSupportedImageType(mediaType) {
+			queue = append(queue, pending{fileID: doc.FileID, mediaType: mediaType})
+		}
+	}
+	var (
+		images []agentsdk.ImageAttachment
+		errs   []string
+	)
+	for _, item := range queue {
+		if len(images) >= telegramMaxInboundImages {
+			break
+		}
+		attachment, err := downloadTelegramImage(ctx, token, item.fileID, item.mediaType)
+		if err != nil {
+			errs = append(errs, err.Error())
+			continue
+		}
+		images = append(images, attachment)
+	}
+	if len(errs) > 0 {
+		return images, errors.New(strings.Join(errs, "; "))
+	}
+	return images, nil
+}
+
+func largestTelegramPhoto(sizes []telegramPhotoSize) (telegramPhotoSize, bool) {
+	var best telegramPhotoSize
+	found := false
+	for _, size := range sizes {
+		if strings.TrimSpace(size.FileID) == "" {
+			continue
+		}
+		if !found || size.FileSize > best.FileSize || (size.FileSize == best.FileSize && size.Width*size.Height > best.Width*best.Height) {
+			best = size
+			found = true
+		}
+	}
+	return best, found
+}
+
+func downloadTelegramImage(ctx context.Context, token, fileID, mediaType string) (agentsdk.ImageAttachment, error) {
+	filePath, err := telegramResolveFilePath(ctx, token, fileID)
+	if err != nil {
+		return agentsdk.ImageAttachment{}, err
+	}
+	data, err := telegramDownloadFile(ctx, token, filePath)
+	if err != nil {
+		return agentsdk.ImageAttachment{}, err
+	}
+	if mediaType == "" || mediaType == "application/octet-stream" {
+		mediaType = strings.ToLower(http.DetectContentType(data))
+		if i := strings.IndexByte(mediaType, ';'); i >= 0 {
+			mediaType = strings.TrimSpace(mediaType[:i])
+		}
+	}
+	if !telegramSupportedImageType(mediaType) {
+		return agentsdk.ImageAttachment{}, fmt.Errorf("telegram file %s is not a supported image type (%s)", fileID, mediaType)
+	}
+	return agentsdk.ImageAttachment{
+		MediaType: mediaType,
+		Data:      base64.StdEncoding.EncodeToString(data),
+	}, nil
+}
+
+// telegramSupportedImageType reports whether a media type is accepted by the
+// model providers for inbound image attachments.
+func telegramSupportedImageType(mediaType string) bool {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func telegramResolveFilePath(ctx context.Context, token, fileID string) (string, error) {
+	body, err := json.Marshal(map[string]any{"file_id": fileID})
+	if err != nil {
+		return "", err
+	}
+	url := telegramAPIBaseURL + token + "/getFile"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := defaultHTTPClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("telegram getFile: %s: %s", resp.Status, firstLine(string(data)))
+	}
+	var parsed telegramFileResponse
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return "", err
+	}
+	if !parsed.OK || strings.TrimSpace(parsed.Result.FilePath) == "" {
+		return "", fmt.Errorf("telegram getFile failed: %s", firstLine(parsed.Description))
+	}
+	return parsed.Result.FilePath, nil
+}
+
+func telegramDownloadFile(ctx context.Context, token, filePath string) ([]byte, error) {
+	url := telegramFileAPIBaseURL + token + "/" + filePath
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := defaultHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("telegram file download: %s: %s", resp.Status, firstLine(string(preview)))
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, telegramMaxImageBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > telegramMaxImageBytes {
+		return nil, fmt.Errorf("telegram file exceeds %d byte limit", telegramMaxImageBytes)
+	}
+	return data, nil
+}
+
 func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, update telegramUpdate, conversations *conversationStore) error {
 	if strings.TrimSpace(update.CallbackQuery.ID) != "" {
 		return handleTelegramCallbackQuery(ctx, cfg, stdout, stderr, token, update.CallbackQuery, conversations)
 	}
 	text := strings.TrimSpace(update.Message.Text)
 	if text == "" {
+		text = strings.TrimSpace(update.Message.Caption)
+	}
+	hasMedia := len(update.Message.Photo) > 0 || update.Message.Document != nil
+	if text == "" && !hasMedia {
 		return nil
 	}
 	chatID := update.Message.Chat.ID
@@ -228,7 +413,7 @@ func handleTelegramUpdate(ctx context.Context, cfg appConfig, stdout, stderr io.
 	if !session.beginRun() {
 		return postTelegramMessage(ctx, token, chatID, "Still working on the previous message. I will reply here when it finishes.")
 	}
-	go runTelegramMessage(ctx, cfg, stdout, stderr, token, chatID, msg, session)
+	go runTelegramMessage(ctx, cfg, stdout, stderr, token, chatID, msg, update.Message, session)
 	return nil
 }
 
@@ -273,14 +458,22 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 	return postTelegramMessage(ctx, token, chatID, reply)
 }
 
-func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, chatID int64, msg inboundMessage, session *conversationSession) {
+func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, chatID int64, msg inboundMessage, media telegramMessage, session *conversationSession) {
 	defer session.finishRun()
 	doneTyping := make(chan struct{})
 	go telegramTypingLoop(ctx, token, chatID, doneTyping)
 	defer close(doneTyping)
 
+	if len(media.Photo) > 0 || media.Document != nil {
+		images, err := downloadTelegramImages(ctx, token, media)
+		if err != nil {
+			fmt.Fprintf(stderr, "telegram image warning: %v\n", err)
+		}
+		msg.Images = images
+	}
+
 	approval := telegramApprovalRequester{token: token, chatID: chatID, session: session}
-	reply, err := runPromptTextWithSessionApproval(ctx, cfg, inboundPrompt(msg, msg.Text), stdout, stderr, session, approval)
+	reply, err := runPromptTextWithSessionApprovalImages(ctx, cfg, inboundPrompt(msg, msg.Text), msg.Images, stdout, stderr, session, approval)
 	if err != nil {
 		fmt.Fprintf(stderr, "telegram run warning: %v\n", err)
 		if postErr := postTelegramMessage(ctx, token, chatID, "Run failed: "+firstLine(err.Error())); postErr != nil {

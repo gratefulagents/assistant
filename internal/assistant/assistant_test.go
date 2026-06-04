@@ -4,6 +4,7 @@ package assistant
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -646,6 +647,97 @@ func TestDecodeTelegramCallbackQueryUpdates(t *testing.T) {
 	update := resp.Result[0]
 	if update.CallbackQuery.ID != "callback-1" || update.CallbackQuery.Data != "assistant:/clear" || update.CallbackQuery.Message.Chat.ID != 9 {
 		t.Fatalf("bad telegram callback decode: %#v", update)
+	}
+}
+
+func TestDecodeTelegramPhotoMessage(t *testing.T) {
+	resp, err := decodeTelegramUpdates([]byte(`{
+		"ok": true,
+		"result": [
+			{
+				"update_id": 43,
+				"message": {
+					"caption": "look at this",
+					"chat": {"id": 9},
+					"from": {"id": 7, "username": "hunter"},
+					"photo": [
+						{"file_id": "small", "file_size": 100, "width": 90, "height": 90},
+						{"file_id": "large", "file_size": 5000, "width": 1280, "height": 1280}
+					]
+				}
+			}
+		]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := resp.Result[0].Message
+	if msg.Caption != "look at this" || len(msg.Photo) != 2 {
+		t.Fatalf("bad photo message decode: %#v", msg)
+	}
+	best, ok := largestTelegramPhoto(msg.Photo)
+	if !ok || best.FileID != "large" {
+		t.Fatalf("largestTelegramPhoto = %#v, %v; want file_id large", best, ok)
+	}
+}
+
+func TestLargestTelegramPhotoSkipsEmptyFileID(t *testing.T) {
+	if _, ok := largestTelegramPhoto(nil); ok {
+		t.Fatal("expected no photo for empty slice")
+	}
+	if _, ok := largestTelegramPhoto([]telegramPhotoSize{{FileID: "", FileSize: 10}}); ok {
+		t.Fatal("expected no photo when file_id is empty")
+	}
+	best, ok := largestTelegramPhoto([]telegramPhotoSize{
+		{FileID: "a", FileSize: 0, Width: 10, Height: 10},
+		{FileID: "b", FileSize: 0, Width: 20, Height: 20},
+	})
+	if !ok || best.FileID != "b" {
+		t.Fatalf("largestTelegramPhoto tie-break = %#v; want file_id b", best)
+	}
+}
+
+func TestDownloadTelegramImages(t *testing.T) {
+	imageBytes := []byte("\xff\xd8\xfffake-jpeg-data")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getFile"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"ok":true,"result":{"file_path":"photos/file_1.jpg"}}`)
+		case strings.Contains(r.URL.Path, "/file/bot"):
+			_, _ = w.Write(imageBytes)
+		default:
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	origAPI, origFile := telegramAPIBaseURL, telegramFileAPIBaseURL
+	telegramAPIBaseURL = server.URL + "/bot"
+	telegramFileAPIBaseURL = server.URL + "/file/bot"
+	t.Cleanup(func() {
+		telegramAPIBaseURL = origAPI
+		telegramFileAPIBaseURL = origFile
+	})
+
+	images, err := downloadTelegramImages(context.Background(), "token", telegramMessage{
+		Photo: []telegramPhotoSize{{FileID: "large", FileSize: 5000}},
+	})
+	if err != nil {
+		t.Fatalf("downloadTelegramImages error: %v", err)
+	}
+	if len(images) != 1 {
+		t.Fatalf("expected 1 image, got %d", len(images))
+	}
+	if images[0].MediaType != "image/jpeg" {
+		t.Fatalf("media type = %q, want image/jpeg", images[0].MediaType)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(images[0].Data)
+	if err != nil {
+		t.Fatalf("image data not base64: %v", err)
+	}
+	if string(decoded) != string(imageBytes) {
+		t.Fatalf("decoded image mismatch: %q", decoded)
 	}
 }
 

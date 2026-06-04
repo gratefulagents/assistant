@@ -9,7 +9,11 @@ import (
 )
 
 func userMessage(text string) agentsdk.RunItem {
-	return agentsdk.RunItem{Type: agentsdk.RunItemMessage, Message: &agentsdk.MessageOutput{Text: text}}
+	return userMessageWithImages(text, nil)
+}
+
+func userMessageWithImages(text string, images []agentsdk.ImageAttachment) agentsdk.RunItem {
+	return agentsdk.RunItem{Type: agentsdk.RunItemMessage, Message: &agentsdk.MessageOutput{Text: text, Images: images}}
 }
 
 func cloneRunItems(items []agentsdk.RunItem) []agentsdk.RunItem {
