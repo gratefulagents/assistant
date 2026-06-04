@@ -76,33 +76,45 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 		return extensionBundle{}, err
 	}
 	bundle.MCPConfig = mcpCfg
+	// appTools are the assistant's own capability tools (durable memory, tasks,
+	// scheduling, transcript search, calendar). Their side effects target the
+	// assistant's datastores/services — never the workspace filesystem — so under
+	// the read-only permission tier (which restricts filesystem mutation) they are
+	// kept available via markFilesystemExempt. Skills are intentionally excluded:
+	// a skill (e.g. install) can write the workspace filesystem, so it stays
+	// governed by the permission tier.
+	var appTools []agentsdk.Tool
 	if cfg.EnableProjectState {
 		store, err := newMemoryStore(cfg)
 		if err != nil {
 			return extensionBundle{}, err
 		}
-		bundle.ExtraTools = append(bundle.ExtraTools, sdkprojectstatetools.Tools(store, "assistant")...)
+		appTools = append(appTools, sdkprojectstatetools.Tools(store, "assistant")...)
 		bundle.MemoryPrime = primeMemory(ctx, store)
 	}
 	if cfg.EnableScheduling {
-		bundle.ExtraTools = append(bundle.ExtraTools, scheduleTools(cfg)...)
+		appTools = append(appTools, scheduleTools(cfg)...)
 	}
 	if cfg.EnableTranscripts {
-		bundle.ExtraTools = append(bundle.ExtraTools, sessionSearchTools(cfg)...)
+		appTools = append(appTools, sessionSearchTools(cfg)...)
 	}
 	if cfg.EnableTranscripts && cfg.EnableProjectState {
-		bundle.ExtraTools = append(bundle.ExtraTools, memoryDistillTools(cfg)...)
-		bundle.ExtraTools = append(bundle.ExtraTools, memoryReviewTools(cfg)...)
-	}
-	if cfg.EnableSkills {
-		tools, err := skillTools(cfg)
-		if err != nil {
-			return extensionBundle{}, err
-		}
-		bundle.ExtraTools = append(bundle.ExtraTools, tools...)
+		appTools = append(appTools, memoryDistillTools(cfg)...)
+		appTools = append(appTools, memoryReviewTools(cfg)...)
 	}
 	if cfg.EnableTools && googleAuthConfigured(cfg) {
 		tools, err := googleCalendarTools(cfg)
+		if err != nil {
+			return extensionBundle{}, err
+		}
+		appTools = append(appTools, tools...)
+	}
+	if toolAccess(cfg.Permission) == agentsdk.ToolAccessLevelReadOnly {
+		appTools = markFilesystemExempt(appTools)
+	}
+	bundle.ExtraTools = append(bundle.ExtraTools, appTools...)
+	if cfg.EnableSkills {
+		tools, err := skillTools(cfg)
 		if err != nil {
 			return extensionBundle{}, err
 		}
@@ -114,6 +126,30 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 	default:
 	}
 	return bundle, nil
+}
+
+// fsExemptTool wraps a host capability tool whose side effects target the
+// assistant's own datastores/services (durable memory, tasks, scheduling,
+// calendar) rather than the workspace filesystem. The SDK's read-only access
+// filter keeps a tool only when IsReadOnly() reports true, so reporting true here
+// keeps these non-filesystem tools available under the read-only permission tier.
+// Every other method delegates to the wrapped tool, preserving its real behavior.
+type fsExemptTool struct{ agentsdk.Tool }
+
+func (fsExemptTool) IsReadOnly() bool { return true }
+
+// markFilesystemExempt wraps each tool as filesystem-exempt so it survives the
+// read-only access filter. Used for capability tools that never write the
+// workspace filesystem; callers must not pass filesystem-mutating tools.
+func markFilesystemExempt(tools []agentsdk.Tool) []agentsdk.Tool {
+	if len(tools) == 0 {
+		return tools
+	}
+	out := make([]agentsdk.Tool, len(tools))
+	for i, t := range tools {
+		out[i] = fsExemptTool{t}
+	}
+	return out
 }
 
 func durableMemoryTools(ctx context.Context, cfg appConfig) ([]agentsdk.Tool, error) {
