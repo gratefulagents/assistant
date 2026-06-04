@@ -162,6 +162,15 @@ export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
 assistant telegram --provider openai-api --permission read-only --max-turns 100
 ```
 
+OpenRouter (e.g. DeepSeek V4 Pro):
+
+```sh
+export OPENROUTER_API_KEY='sk-or-...'
+assistant --provider openrouter --model deepseek/deepseek-v4-pro --permission read-only --max-turns 100
+```
+
+See [docs/configuration.md](docs/configuration.md#openrouter) for OpenRouter setup details.
+
 Quiet smoke test with no tools or local extensions:
 
 ```sh

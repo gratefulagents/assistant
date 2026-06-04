@@ -11,7 +11,8 @@ Assistant supports the following provider modes:
 - `openai-api`: reads an API key from `OPENAI_API_KEY` by default.
 - `openrouter`: reads an API key from `OPENROUTER_API_KEY` by default and talks
   to the OpenRouter OpenAI-compatible API. Use fully-qualified model slugs such
-  as `openai/gpt-4o-mini` or `anthropic/claude-3.5-sonnet`.
+  as `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`, or
+  `deepseek/deepseek-v4-pro`.
 
 Examples:
 
@@ -22,6 +23,49 @@ assistant oauth-refresh
 OPENAI_API_KEY=sk-... assistant --provider openai-api
 OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
 ```
+
+### OpenRouter
+
+OpenRouter gives you a single OpenAI-compatible API key that can reach models
+from many providers (OpenAI, Anthropic, DeepSeek, and more).
+
+1. Create an account at [openrouter.ai](https://openrouter.ai) and generate an
+   API key from the [Keys page](https://openrouter.ai/keys). Keys start with
+   `sk-or-`.
+2. Export the key (or pass `--api-key`):
+
+   ```sh
+   export OPENROUTER_API_KEY=sk-or-...
+   ```
+
+3. Run Assistant with the `openrouter` provider and any OpenRouter model slug:
+
+   ```sh
+   assistant --provider openrouter --model openai/gpt-4o-mini
+   ```
+
+The base URL defaults to `https://openrouter.ai/api/v1` and the API mode to
+`chat-completions`. Override them with `--base-url`/`ASSISTANT_OPENAI_BASE_URL`
+and `--api-mode`/`ASSISTANT_OPENAI_API_MODE` if needed.
+
+#### DeepSeek V4 Pro via OpenRouter
+
+DeepSeek V4 Pro is available through OpenRouter under the slug
+`deepseek/deepseek-v4-pro`. Select it with `--model` (or `ASSISTANT_MODEL`):
+
+```sh
+OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model deepseek/deepseek-v4-pro
+```
+
+```sh
+export ASSISTANT_PROVIDER=openrouter
+export ASSISTANT_MODEL=deepseek/deepseek-v4-pro
+export OPENROUTER_API_KEY=sk-or-...
+assistant
+```
+
+Browse the full catalog of available slugs at
+[openrouter.ai/models](https://openrouter.ai/models).
 
 Use `--openai-oauth-refresh=false` for long-running Assistant processes that
 share one OAuth file. Then run `assistant oauth-refresh` from a single process;
