@@ -16,6 +16,7 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 - Optional MCP servers from workspace, user, and extension config files.
 - Optional skill discovery, install, and catalog tools.
 - Outbound polling integrations for Telegram and Gmail.
+- Google Connect: a hosted SSO broker so users grant Google access (Gmail, Calendar) once and the assistant gets short-lived tokens, instead of pasting expiring tokens or running Google MCP servers. Includes read-only Calendar agent tools (list events, event details).
 - `family-deploy` to stand up one containerized assistant per family member or freeloader, plus one OAuth refresher.
 - Small authenticated local JSON gateway for trusted local automation.
 
@@ -301,6 +302,8 @@ assistant "prompt"              # one-shot prompt
 assistant serve                 # local authenticated JSON gateway
 assistant telegram              # Telegram long polling
 assistant gmail                 # Gmail polling
+assistant google-connect        # connect a Google account via the broker (SSO)
+assistant google-refresh        # keep the brokered Google token fresh
 assistant schedule              # run scheduled prompts
 assistant poll                  # run every configured poller
 assistant oauth-refresh         # refresh the OpenAI OAuth auth JSON every hour

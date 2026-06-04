@@ -44,9 +44,9 @@ type gmailMessage struct {
 }
 
 func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
-	token := strings.TrimSpace(cfg.GmailToken)
-	if token == "" {
-		return errors.New("gmail polling requires --gmail-token, ASSISTANT_GMAIL_ACCESS_TOKEN, or ASSISTANT_GMAIL_TOKEN")
+	tokenSource, err := resolveGmailTokenSource(cfg)
+	if err != nil {
+		return err
 	}
 	state, err := loadGmailSeenState(cfg)
 	if err != nil {
@@ -58,6 +58,17 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
+		token, err := tokenSource(ctx)
+		if err != nil {
+			if errors.Is(err, errGoogleReconnect) {
+				return err
+			}
+			fmt.Fprintf(stderr, "gmail token warning: %v\n", err)
+			if !sleepContext(ctx, time.Duration(cfg.GmailPollInterval)*time.Second) {
+				return nil
+			}
+			continue
+		}
 		if err := pollGmailOnce(ctx, cfg, token, &state, stdout, stderr, conversations); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -68,6 +79,25 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 			return nil
 		}
 	}
+}
+
+// gmailTokenSource returns a Gmail access token, refreshing it as needed.
+type gmailTokenSource func(ctx context.Context) (string, error)
+
+// resolveGmailTokenSource prefers an explicit static token, then falls back to a
+// brokered Google credential created with `assistant google-connect`.
+func resolveGmailTokenSource(cfg appConfig) (gmailTokenSource, error) {
+	if token := strings.TrimSpace(cfg.GmailToken); token != "" {
+		return func(context.Context) (string, error) { return token, nil }, nil
+	}
+	if googleAuthConfigured(cfg) {
+		session, err := newGoogleAuthSession(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return session.AccessToken, nil
+	}
+	return nil, errors.New("gmail polling requires --gmail-token, ASSISTANT_GMAIL_ACCESS_TOKEN, or a connected Google account (run `assistant google-connect`)")
 }
 
 func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmailSeenState, stdout, stderr io.Writer, conversations *conversationStore) error {

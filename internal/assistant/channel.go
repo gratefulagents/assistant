@@ -167,7 +167,7 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
-			triggerAfterTurnMemoryReview(ctx, cfg, started, stderr, true)
+			triggerAfterTurnMemoryReview(ctx, cfg, meta.Channel, started, stderr, true)
 			return finalText, nil
 		}
 		audit.EmitApprovalRequest(result.Interruption)

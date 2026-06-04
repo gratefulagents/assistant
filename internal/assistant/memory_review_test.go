@@ -64,6 +64,24 @@ func TestParseAndNormalizeMemoryReviewAssessment(t *testing.T) {
 	}
 }
 
+func TestNormalizeReviewedMemoryKindNeverPins(t *testing.T) {
+	if got := normalizeReviewedMemoryKind(sdkprojectstate.MemoryKindPinned); got == sdkprojectstate.MemoryKindPinned {
+		t.Fatalf("normalizeReviewedMemoryKind(pinned) = %q, must not be pinned", got)
+	}
+	cases := map[string]string{
+		"pinned":     sdkprojectstate.MemoryKindSemantic,
+		"PINNED":     sdkprojectstate.MemoryKindSemantic,
+		"":           sdkprojectstate.MemoryKindSemantic,
+		"procedural": sdkprojectstate.MemoryKindProcedural,
+		"episodic":   sdkprojectstate.MemoryKindEpisodic,
+	}
+	for input, want := range cases {
+		if got := normalizeReviewedMemoryKind(input); got != want {
+			t.Fatalf("normalizeReviewedMemoryKind(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestFinalizeMemoryReviewCandidatesAppliesAndSkipsDuplicates(t *testing.T) {
 	cfg := transcriptTestConfig(t)
 	result := memoryDistillResult{

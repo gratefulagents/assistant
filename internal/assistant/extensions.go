@@ -101,6 +101,13 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 		}
 		bundle.ExtraTools = append(bundle.ExtraTools, tools...)
 	}
+	if cfg.EnableTools && googleAuthConfigured(cfg) {
+		tools, err := googleCalendarTools(cfg)
+		if err != nil {
+			return extensionBundle{}, err
+		}
+		bundle.ExtraTools = append(bundle.ExtraTools, tools...)
+	}
 	select {
 	case <-ctx.Done():
 		return extensionBundle{}, ctx.Err()

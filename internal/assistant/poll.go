@@ -52,7 +52,7 @@ func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 			errCh <- runTelegramPoller(ctx, cfg, stdout, stderr)
 		}()
 	}
-	if strings.TrimSpace(cfg.GmailToken) != "" {
+	if strings.TrimSpace(cfg.GmailToken) != "" || googleAuthConfigured(cfg) {
 		started++
 		go func() {
 			errCh <- runGmailPoller(ctx, cfg, stdout, stderr)
@@ -65,7 +65,7 @@ func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 		}()
 	}
 	if started == 0 {
-		return errors.New("poll requires ASSISTANT_TELEGRAM_BOT_TOKEN, ASSISTANT_GMAIL_ACCESS_TOKEN, or --scheduling=true")
+		return errors.New("poll requires ASSISTANT_TELEGRAM_BOT_TOKEN, ASSISTANT_GMAIL_ACCESS_TOKEN, a connected Google account (assistant google-connect), or --scheduling=true")
 	}
 	fmt.Fprintf(stderr, "assistant polling %d channel(s); no inbound port required\n", started)
 	for completed := 0; completed < started; completed++ {

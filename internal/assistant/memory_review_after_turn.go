@@ -31,12 +31,25 @@ func normalizeMemoryReviewMode(value string) string {
 	}
 }
 
-func triggerAfterTurnMemoryReview(ctx context.Context, cfg appConfig, since time.Time, stderr io.Writer, async bool) {
+// isLocalMemoryReviewChannel reports whether a transcript channel belongs to a
+// human operator at the local terminal. Only these channels are trusted to
+// auto-apply durable memories; everything else (telegram, gmail, schedule, ...)
+// carries third-party content that must not silently write primed memory.
+func isLocalMemoryReviewChannel(channel string) bool {
+	switch strings.ToLower(strings.TrimSpace(channel)) {
+	case "", "terminal", "cli":
+		return true
+	default:
+		return false
+	}
+}
+
+func triggerAfterTurnMemoryReview(ctx context.Context, cfg appConfig, channel string, since time.Time, stderr io.Writer, async bool) {
 	if normalizeMemoryReviewMode(cfg.MemoryReviewMode) == memoryReviewModeOff {
 		return
 	}
 	run := func(runCtx context.Context) {
-		runAfterTurnMemoryReview(runCtx, cfg, since, stderr, reviewTranscriptMemories)
+		runAfterTurnMemoryReview(runCtx, cfg, channel, since, stderr, reviewTranscriptMemories)
 	}
 	if async {
 		go run(context.WithoutCancel(ctx))
@@ -45,7 +58,7 @@ func triggerAfterTurnMemoryReview(ctx context.Context, cfg appConfig, since time
 	run(ctx)
 }
 
-func runAfterTurnMemoryReview(ctx context.Context, cfg appConfig, since time.Time, stderr io.Writer, reviewer memoryReviewRunFunc) {
+func runAfterTurnMemoryReview(ctx context.Context, cfg appConfig, channel string, since time.Time, stderr io.Writer, reviewer memoryReviewRunFunc) {
 	mode := normalizeMemoryReviewMode(cfg.MemoryReviewMode)
 	if mode == memoryReviewModeOff {
 		return
@@ -61,6 +74,15 @@ func runAfterTurnMemoryReview(ctx context.Context, cfg appConfig, since time.Tim
 	if cfg.Command == memoryReviewerName || cfg.Command == autoReviewerName {
 		return
 	}
+	// Auto-applying memories distilled from untrusted, non-local channels would
+	// let third-party message content write durable memories that later get
+	// primed into the system prompt as trusted background. Restrict apply to the
+	// local operator and downgrade everything else to preview so nothing is
+	// written without a human at the terminal.
+	if mode == memoryReviewModeApply && !isLocalMemoryReviewChannel(channel) {
+		memoryReviewLog(stderr, "apply is restricted to the local terminal; using preview for channel %q", channel)
+		mode = memoryReviewModePreview
+	}
 	if since.IsZero() {
 		since = time.Now().UTC().Add(-time.Minute)
 	}
@@ -75,10 +97,13 @@ func runAfterTurnMemoryReview(ctx context.Context, cfg appConfig, since time.Tim
 		limit = 50
 	}
 	result, err := reviewer(ctx, cfg, memoryReviewInput{
-		Action:           mode,
-		Since:            since.Add(-time.Second).UTC().Format(time.RFC3339Nano),
-		Limit:            limit,
-		IncludeHeuristic: true,
+		Action: mode,
+		Since:  since.Add(-time.Second).UTC().Format(time.RFC3339Nano),
+		Limit:  limit,
+		// Deterministic regex candidates capture arbitrary high-confidence text
+		// from transcript turns, so they must never auto-write without LLM
+		// review. Surface them only in preview; apply trusts the reviewer alone.
+		IncludeHeuristic: mode == memoryReviewModePreview,
 	}, stderr)
 	if err != nil {
 		memoryReviewLog(stderr, "warning: %v", err)

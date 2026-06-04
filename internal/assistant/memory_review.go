@@ -160,7 +160,7 @@ func memoryReviewOutputSchema() *agentsdk.OutputSchema {
 					"type":"object",
 					"properties":{
 						"content":{"type":"string"},
-						"kind":{"type":"string","enum":["semantic","procedural","episodic","pinned"]},
+						"kind":{"type":"string","enum":["semantic","procedural","episodic"]},
 						"scope":{"type":"string","enum":["user","project","task","file"]},
 						"tags":{"type":"array","items":{"type":"string"}},
 						"confidence":{"type":"number","minimum":0,"maximum":1},
@@ -308,10 +308,12 @@ func sourceTurnForCandidate(ids []string, turns []transcriptTurn, turnByID map[s
 	return transcriptTurn{}
 }
 
+// normalizeReviewedMemoryKind clamps the reviewer-supplied kind to a safe set.
+// "pinned" is intentionally excluded: the LLM must not be able to escalate
+// transcript-derived memories into the high-priority pinned section that is
+// auto-primed into every future system prompt.
 func normalizeReviewedMemoryKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case sdkprojectstate.MemoryKindPinned:
-		return sdkprojectstate.MemoryKindPinned
 	case sdkprojectstate.MemoryKindProcedural:
 		return sdkprojectstate.MemoryKindProcedural
 	case sdkprojectstate.MemoryKindEpisodic:

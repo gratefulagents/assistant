@@ -53,7 +53,7 @@ func TestRunAfterTurnMemoryReviewSkipsWhenOff(t *testing.T) {
 	cfg := transcriptTestConfig(t)
 	cfg.MemoryReviewMode = memoryReviewModeOff
 	called := false
-	runAfterTurnMemoryReview(t.Context(), cfg, time.Now().UTC(), nil, func(context.Context, appConfig, memoryReviewInput, io.Writer) (memoryDistillResult, error) {
+	runAfterTurnMemoryReview(t.Context(), cfg, "terminal", time.Now().UTC(), nil, func(context.Context, appConfig, memoryReviewInput, io.Writer) (memoryDistillResult, error) {
 		called = true
 		return memoryDistillResult{}, nil
 	})
@@ -71,7 +71,7 @@ func TestRunAfterTurnMemoryReviewBuildsInputAndLogsPreview(t *testing.T) {
 	since := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
 	var stderr strings.Builder
 	var got memoryReviewInput
-	runAfterTurnMemoryReview(t.Context(), cfg, since, &stderr, func(_ context.Context, _ appConfig, in memoryReviewInput, _ io.Writer) (memoryDistillResult, error) {
+	runAfterTurnMemoryReview(t.Context(), cfg, "terminal", since, &stderr, func(_ context.Context, _ appConfig, in memoryReviewInput, _ io.Writer) (memoryDistillResult, error) {
 		got = in
 		return memoryDistillResult{
 			Action: memoryReviewModePreview,
@@ -97,10 +97,59 @@ func TestRunAfterTurnMemoryReviewLogsApplyAndErrors(t *testing.T) {
 	cfg.EnableTranscripts = true
 	cfg.MemoryReviewMode = memoryReviewModeApply
 	var stderr strings.Builder
-	runAfterTurnMemoryReview(t.Context(), cfg, time.Now().UTC(), &stderr, func(context.Context, appConfig, memoryReviewInput, io.Writer) (memoryDistillResult, error) {
+	runAfterTurnMemoryReview(t.Context(), cfg, "terminal", time.Now().UTC(), &stderr, func(context.Context, appConfig, memoryReviewInput, io.Writer) (memoryDistillResult, error) {
 		return memoryDistillResult{}, errors.New("review failed")
 	})
 	if !strings.Contains(stderr.String(), "review failed") {
 		t.Fatalf("stderr missing error: %q", stderr.String())
+	}
+}
+
+func TestRunAfterTurnMemoryReviewApplyTrustsLocalChannelOnly(t *testing.T) {
+	cfg := transcriptTestConfig(t)
+	cfg.EnableProjectState = true
+	cfg.EnableTranscripts = true
+	cfg.MemoryReviewMode = memoryReviewModeApply
+
+	// Local terminal: apply stays apply and must not auto-include heuristic
+	// candidates, which would bypass LLM review.
+	var local memoryReviewInput
+	runAfterTurnMemoryReview(t.Context(), cfg, "terminal", time.Now().UTC(), io.Discard, func(_ context.Context, _ appConfig, in memoryReviewInput, _ io.Writer) (memoryDistillResult, error) {
+		local = in
+		return memoryDistillResult{Action: in.Action}, nil
+	})
+	if local.Action != memoryReviewModeApply {
+		t.Fatalf("local action = %q, want apply", local.Action)
+	}
+	if local.IncludeHeuristic {
+		t.Fatal("apply must not auto-include heuristic candidates")
+	}
+
+	// Untrusted remote channel: apply is downgraded to preview so nothing is
+	// written without a human at the terminal.
+	var stderr strings.Builder
+	var remote memoryReviewInput
+	runAfterTurnMemoryReview(t.Context(), cfg, "telegram", time.Now().UTC(), &stderr, func(_ context.Context, _ appConfig, in memoryReviewInput, _ io.Writer) (memoryDistillResult, error) {
+		remote = in
+		return memoryDistillResult{Action: in.Action}, nil
+	})
+	if remote.Action != memoryReviewModePreview {
+		t.Fatalf("remote action = %q, want preview downgrade", remote.Action)
+	}
+	if !strings.Contains(stderr.String(), "restricted to the local terminal") {
+		t.Fatalf("stderr missing downgrade notice: %q", stderr.String())
+	}
+}
+
+func TestIsLocalMemoryReviewChannel(t *testing.T) {
+	for _, channel := range []string{"", "terminal", "cli", "CLI", " Terminal "} {
+		if !isLocalMemoryReviewChannel(channel) {
+			t.Fatalf("isLocalMemoryReviewChannel(%q) = false, want true", channel)
+		}
+	}
+	for _, channel := range []string{"telegram", "gmail", "schedule", "generic"} {
+		if isLocalMemoryReviewChannel(channel) {
+			t.Fatalf("isLocalMemoryReviewChannel(%q) = true, want false", channel)
+		}
 	}
 }

@@ -93,6 +93,9 @@ type appConfig struct {
 	GmailMaxResults             int
 	GmailMarkRead               bool
 	GmailSendReplies            bool
+	GoogleAuthPath              string
+	GoogleConnectURL            string
+	GoogleScopes                stringListFlag
 	Prompt                      string
 	FileConfig                  assistantConfigFile
 }
@@ -162,6 +165,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.IntVar(&cfg.GmailMaxResults, "gmail-max-results", cfg.GmailMaxResults, "maximum Gmail messages to fetch per poll")
 	fs.BoolVar(&cfg.GmailMarkRead, "gmail-mark-read", cfg.GmailMarkRead, "mark Gmail messages read after processing")
 	fs.BoolVar(&cfg.GmailSendReplies, "gmail-send-replies", cfg.GmailSendReplies, "send assistant replies through Gmail")
+	fs.StringVar(&cfg.GoogleAuthPath, "google-auth-path", cfg.GoogleAuthPath, "path to the brokered Google auth JSON; defaults to state-dir/google-auth.json")
+	fs.StringVar(&cfg.GoogleConnectURL, "google-connect-url", cfg.GoogleConnectURL, "base URL of the Google Connect broker for google-connect/refresh")
+	fs.Var(&cfg.GoogleScopes, "google-scope", "Google OAuth scope to request during google-connect; repeat or comma-separate")
 
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, fmt.Errorf("%w\n\n%s", err, usage())
@@ -246,6 +252,9 @@ func defaultConfig() appConfig {
 		GmailMaxResults:           envInt("ASSISTANT_GMAIL_MAX_RESULTS", 10),
 		GmailMarkRead:             envBool("ASSISTANT_GMAIL_MARK_READ", false),
 		GmailSendReplies:          envBool("ASSISTANT_GMAIL_SEND_REPLIES", false),
+		GoogleAuthPath:            strings.TrimSpace(os.Getenv("ASSISTANT_GOOGLE_AUTH_PATH")),
+		GoogleConnectURL:          strings.TrimSpace(os.Getenv("ASSISTANT_GOOGLE_CONNECT_URL")),
+		GoogleScopes:              splitListEnv(os.Getenv("ASSISTANT_GOOGLE_SCOPES")),
 	}
 }
 
@@ -396,6 +405,47 @@ func (c *appConfig) validateOAuthRefreshCommand() error {
 	return nil
 }
 
+func isConnectCommand(arg string) bool {
+	switch strings.TrimSpace(strings.ToLower(arg)) {
+	case "google-connect", "google-refresh", "google-disconnect":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateConnectCommand validates the Google Connect client commands. These
+// commands do not talk to the model provider, so they skip the standard
+// provider/model validation.
+func (c *appConfig) validateConnectCommand(command string) error {
+	if strings.TrimSpace(c.WorkDir) == "" {
+		c.WorkDir = "."
+	}
+	if strings.TrimSpace(c.StateDir) != "" {
+		if abs, err := filepath.Abs(expandUserPath(c.StateDir)); err == nil {
+			c.StateDir = abs
+		}
+	}
+	c.GoogleAuthPath = expandUserPath(c.GoogleAuthPath)
+	c.GoogleScopes = normalizeGoogleScopes(c.GoogleScopes)
+	if len(c.GoogleScopes) == 0 {
+		c.GoogleScopes = defaultGoogleScopes()
+	}
+	if c.OAuthRefreshInterval < 0 {
+		return errors.New("--oauth-refresh-interval must be non-negative")
+	}
+
+	switch strings.TrimSpace(strings.ToLower(command)) {
+	case "google-connect":
+		if strings.TrimSpace(c.GoogleConnectURL) == "" {
+			return errors.New("google-connect requires --google-connect-url (or ASSISTANT_GOOGLE_CONNECT_URL)")
+		}
+	case "google-refresh", "google-disconnect":
+		// Resolved from the saved google-auth.json at runtime.
+	}
+	return nil
+}
+
 func (c *appConfig) loadFileConfig() error {
 	path := strings.TrimSpace(c.ConfigPath)
 	if path == "" {
@@ -491,6 +541,8 @@ examples:
   assistant schedule --provider openai-oauth
   assistant telegram --provider openai-oauth
   assistant gmail --provider openai-oauth --gmail-query "is:unread"
+  assistant google-connect --google-connect-url https://connect.gratefulagents.dev
+  assistant google-refresh
   assistant poll --provider openai-oauth
   assistant serve --provider openai-oauth --addr :8080
   assistant family-deploy

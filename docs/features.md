@@ -151,7 +151,10 @@ After-turn review is opt-in. Set `--memory-review preview` to run
 saving them. Set `--memory-review apply` to automatically save validated,
 non-duplicate candidates. This uses recent transcript turns from the just
 completed run and the same reviewer safeguards as the manual `memory_review`
-tool.
+tool. To prevent memory poisoning, after-turn `apply` is honored only for the
+local terminal; turns from remote channels (Telegram, Gmail, scheduled runs)
+fall back to `preview`, and the after-turn reviewer never auto-applies raw
+deterministic regex matches or pins memories into the primed system prompt.
 
 For a daily memory review, create a scheduled prompt such as:
 
@@ -377,6 +380,94 @@ are only sent when the reviewer escalates. For other unattended channel modes,
 either run with narrow or read-only tool access, or set `--approval=false` only
 for a workspace and tool set you trust.
 
+## Google Connect (SSO)
+
+Pasting a raw Gmail access token works but the token expires in about an hour.
+For an always-on assistant, connect a Google account through a hosted **Connect
+broker** that performs Google SSO once and then mints short-lived access tokens
+on demand.
+
+The broker owns a single verified Google Cloud OAuth web app, so end users never
+create their own Google project. Someone hosts the broker; each assistant pairs
+with it.
+
+The broker itself is not part of this open-source assistant — it is a separate
+service. You can run a hosted one or self-host a compatible broker; the full
+HTTP/JSON contract is documented in
+[docs/google-connect-protocol.md](google-connect-protocol.md).
+
+Connect an assistant to a broker:
+
+```sh
+export ASSISTANT_GOOGLE_CONNECT_URL='https://connect.gratefulagents.dev'
+assistant google-connect --google-scope gmail.readonly
+```
+
+`google-connect` prints a URL. Open it, complete Google SSO, and grant the
+requested scopes. The assistant stores only a pairing credential (an
+`assistant_id` plus a secret) in `google-auth.json`; the Google refresh token
+stays on the broker. Keep the access token fresh with a refresher daemon,
+mirroring `oauth-refresh`:
+
+```sh
+assistant google-refresh
+```
+
+Disconnect and revoke at any time:
+
+```sh
+assistant google-disconnect
+```
+
+Once connected, `assistant gmail` and `assistant poll` use the brokered
+credential automatically when no static `--gmail-token` is set.
+
+### Calendar tools
+
+When the connected Google account includes a Calendar scope and `--enable-tools`
+is set, the assistant registers read-only Google Calendar agent tools that act
+through the same brokered access token:
+
+```text
+calendar_list_events    list upcoming events (needs calendar or calendar.readonly)
+calendar_get_event      fetch the full details of one event by id
+```
+
+Both tools are read-only. Granting `calendar.readonly` is enough:
+
+```sh
+assistant google-connect --google-scope gmail.readonly --google-scope calendar.readonly
+```
+
+How the flow works:
+
+```text
+google-connect  -> POST /device/start (assistant_id + secret hash + scopes)
+                -> open verification URL -> Google SSO + consent
+broker callback -> exchanges code for a refresh token, stores it server-side
+google-connect  -> polls /device/token until authorized -> writes google-auth.json
+gmail/refresh   -> POST /token (assistant_id + secret) -> short-lived access token
+```
+
+The complete broker protocol, including request/response shapes and the
+server-side responsibilities, is in
+[docs/google-connect-protocol.md](google-connect-protocol.md).
+
+Client flags:
+
+```text
+--google-connect-url       base URL of the Connect broker
+--google-scope             Google scope to request; repeatable
+--google-auth-path         credential path; defaults to state-dir/google-auth.json
+--oauth-refresh-interval   google-refresh interval; 0 runs once
+```
+
+Security notes: the OAuth client secret and refresh tokens live only on the
+broker; assistants only ever hold short-lived access tokens and a pairing
+secret. A well-behaved broker validates requested scopes against an allowlist,
+stores the pairing secret as a hash compared in constant time, and can encrypt
+refresh tokens at rest.
+
 ## Gmail Polling
 
 Gmail uses outbound polling against the Gmail API.
@@ -387,7 +478,10 @@ assistant gmail --provider openai-oauth --gmail-query "is:unread"
 ```
 
 Use a Gmail OAuth token with `gmail.readonly` for polling. Add `gmail.modify`
-for `--gmail-mark-read`, and `gmail.send` for `--gmail-send-replies`.
+for `--gmail-mark-read`, and `gmail.send` for `--gmail-send-replies`. Instead of
+a static token, you can connect a Google account through the Connect broker (see
+[Google Connect](#google-connect-sso)); `assistant gmail` then uses the brokered
+credential automatically and refreshes it as needed.
 
 By default, Gmail replies are printed to stdout. Sending mail requires an
 explicit opt-in:
@@ -421,8 +515,9 @@ assistant poll --provider openai-oauth
 ```
 
 `assistant poll` starts Telegram when `ASSISTANT_TELEGRAM_BOT_TOKEN` is set,
-Gmail when `ASSISTANT_GMAIL_ACCESS_TOKEN` or `ASSISTANT_GMAIL_TOKEN` is set,
-and the scheduler unless `--scheduling=false` is set.
+Gmail when `ASSISTANT_GMAIL_ACCESS_TOKEN`/`ASSISTANT_GMAIL_TOKEN` is set or a
+Google account is connected via `assistant google-connect`, and the scheduler
+unless `--scheduling=false` is set.
 
 ## Local Gateway
 

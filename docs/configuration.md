@@ -114,7 +114,11 @@ model by default; override it with `--memory-reviewer-model` or
 After-turn review is disabled by default. Set `--memory-review preview` or
 `ASSISTANT_MEMORY_REVIEW=preview` to run a review after each completed turn and
 log candidate memories without saving them. Set it to `apply` to automatically
-save validated non-duplicate candidates. `--memory-review-limit` and
+save validated non-duplicate candidates. For safety, `apply` only writes when
+the turn came from the local terminal (`terminal`/`cli`); on remote channels
+such as Telegram, Gmail, or scheduled runs it is automatically downgraded to
+`preview` so third-party message content can never silently write durable
+memory. `--memory-review-limit` and
 `ASSISTANT_MEMORY_REVIEW_LIMIT` control how many recent transcript turns the
 after-turn reviewer may inspect. Set `ASSISTANT_TRANSCRIPTS=false` or
 `--transcripts=false` to disable transcript persistence and transcript-backed

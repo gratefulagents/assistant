@@ -36,6 +36,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if isOAuthRefreshCommand(command) {
 		err = cfg.validateOAuthRefreshCommand()
+	} else if isConnectCommand(command) {
+		err = cfg.validateConnectCommand(command)
 	} else {
 		err = cfg.validate()
 	}
@@ -53,6 +55,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch cfg.Command {
 	case "oauth-refresh", "refresh-oauth":
 		err = runOAuthRefresh(ctx, cfg, stdout, stderr)
+	case "google-connect":
+		err = runGoogleConnect(ctx, cfg, stdout, stderr)
+	case "google-refresh":
+		err = runGoogleRefresh(ctx, cfg, stdout, stderr)
+	case "google-disconnect":
+		err = runGoogleDisconnect(ctx, cfg, stdout, stderr)
 	case "serve":
 		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runGateway)
 	case "telegram":
@@ -87,7 +95,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 func isCommand(arg string) bool {
 	switch arg {
-	case "serve", "telegram", "gmail", "schedule", "poll", "version", "update", "oauth-refresh", "refresh-oauth":
+	case "serve", "telegram", "gmail", "schedule", "poll", "version", "update", "oauth-refresh", "refresh-oauth",
+		"google-connect", "google-refresh", "google-disconnect":
 		return true
 	default:
 		return false
