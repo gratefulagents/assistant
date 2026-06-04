@@ -48,6 +48,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	cfg.Command = command
 	cfg.Serve = command == "serve"
 	configureLogging(cfg, stderr)
+	// Redirect the Telegram bot/file APIs (e.g. at an ingress gateway) before any
+	// poller or scheduler-delivery goroutine starts, so the override is applied
+	// exactly once with no concurrent mutation of the package-level base URLs.
+	applyTelegramAPIBase(cfg.TelegramAPIBase)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

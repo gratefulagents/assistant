@@ -90,6 +90,7 @@ type appConfig struct {
 	LangfusePublicKey           string
 	LangfuseSecretKey           string
 	TelegramBotToken            string
+	TelegramAPIBase             string
 	TelegramAllowedUsers        stringListFlag
 	TelegramAllowedChats        stringListFlag
 	TelegramPollTimeout         int
@@ -162,6 +163,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.GatewayAddr, "addr", cfg.GatewayAddr, "gateway listen address for serve mode")
 	fs.StringVar(&cfg.GatewayToken, "gateway-token", cfg.GatewayToken, "bearer token for generic gateway endpoint")
 	fs.StringVar(&cfg.TelegramBotToken, "telegram-bot-token", cfg.TelegramBotToken, "Telegram bot token for long polling")
+	fs.StringVar(&cfg.TelegramAPIBase, "telegram-api-base", cfg.TelegramAPIBase, "Telegram API root override (e.g. an ingress gateway); empty uses https://api.telegram.org")
 	fs.Var(&cfg.TelegramAllowedUsers, "telegram-allowed-user", "Telegram user ID or username allowed to use the bot; repeat or comma-separate")
 	fs.Var(&cfg.TelegramAllowedChats, "telegram-allowed-chat", "Telegram chat ID allowed to use the bot; repeat or comma-separate")
 	fs.IntVar(&cfg.TelegramPollTimeout, "telegram-poll-timeout", cfg.TelegramPollTimeout, "Telegram long-poll timeout in seconds")
@@ -256,6 +258,7 @@ func defaultConfig() appConfig {
 		LangfusePublicKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_PUBLIC_KEY")),
 		LangfuseSecretKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_SECRET_KEY")),
 		TelegramBotToken:          strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
+		TelegramAPIBase:           strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_API_BASE")),
 		TelegramAllowedUsers:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
 		TelegramAllowedChats:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),
 		TelegramPollTimeout:       envInt("ASSISTANT_TELEGRAM_POLL_TIMEOUT", 50),

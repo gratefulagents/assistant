@@ -29,9 +29,25 @@ const telegramMessageChunkRunes = 3800
 const telegramMaxImageBytes = 12 << 20
 const telegramMaxInboundImages = 8
 
-// Base URLs are vars so tests can point them at a stub server.
+// Base URLs are vars so tests can point them at a stub server and so
+// --telegram-api-base can redirect the bot/file APIs at an ingress proxy.
 var telegramAPIBaseURL = telegramAPIBase
 var telegramFileAPIBaseURL = telegramFileAPIBase
+
+// applyTelegramAPIBase redirects the Telegram bot and file APIs at an alternate
+// root (e.g. an ingress gateway that multiplexes a shared bot's update stream).
+// The value is the API root with no trailing path — the standard "/bot<token>"
+// and "/file/bot<token>" suffixes are appended exactly as for api.telegram.org,
+// so a backend believes it is talking to a private bot. An empty value keeps the
+// public Telegram defaults.
+func applyTelegramAPIBase(base string) {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		return
+	}
+	telegramAPIBaseURL = base + "/bot"
+	telegramFileAPIBaseURL = base + "/file/bot"
+}
 
 var telegramApprovalSeq atomic.Uint64
 
@@ -110,7 +126,7 @@ func telegramConfigureBot(ctx context.Context, token string) error {
 	if strings.TrimSpace(token) == "" {
 		return nil
 	}
-	return postJSON(ctx, telegramAPIBase+token+"/setMyCommands", "", map[string]any{
+	return postJSON(ctx, telegramAPIBaseURL+token+"/setMyCommands", "", map[string]any{
 		"commands": telegramBotCommands(),
 	})
 }
@@ -176,7 +192,7 @@ func fetchTelegramUpdates(ctx context.Context, token string, offset int64, timeo
 	if err != nil {
 		return nil, err
 	}
-	url := telegramAPIBase + token + "/getUpdates"
+	url := telegramAPIBaseURL + token + "/getUpdates"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -715,7 +731,7 @@ func answerTelegramCallbackQuery(ctx context.Context, token, callbackID, text st
 	if strings.TrimSpace(text) != "" {
 		payload["text"] = text
 	}
-	return postJSON(ctx, telegramAPIBase+token+"/answerCallbackQuery", "", payload)
+	return postJSON(ctx, telegramAPIBaseURL+token+"/answerCallbackQuery", "", payload)
 }
 
 func editTelegramMessageReplyMarkup(ctx context.Context, token string, chatID, messageID int64) error {
@@ -729,14 +745,14 @@ func editTelegramMessageReplyMarkup(ctx context.Context, token string, chatID, m
 			"inline_keyboard": []any{},
 		},
 	}
-	return postJSON(ctx, telegramAPIBase+token+"/editMessageReplyMarkup", "", payload)
+	return postJSON(ctx, telegramAPIBaseURL+token+"/editMessageReplyMarkup", "", payload)
 }
 
 func sendTelegramChatAction(ctx context.Context, token string, chatID int64, action string) error {
 	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(action) == "" {
 		return nil
 	}
-	return postJSON(ctx, telegramAPIBase+token+"/sendChatAction", "", map[string]any{
+	return postJSON(ctx, telegramAPIBaseURL+token+"/sendChatAction", "", map[string]any{
 		"chat_id": chatID,
 		"action":  action,
 	})
@@ -766,7 +782,7 @@ func postTelegramApprovalMessage(ctx context.Context, token string, chatID int64
 		"chat_id":      chatID,
 		"reply_markup": telegramApprovalKeyboard(approval.ID),
 	}
-	return postTelegramPayload(ctx, telegramAPIBase+token+"/sendMessage", payload, telegramApprovalMessage(approval, title))
+	return postTelegramPayload(ctx, telegramAPIBaseURL+token+"/sendMessage", payload, telegramApprovalMessage(approval, title))
 }
 
 func telegramApprovalKeyboard(id string) map[string]any {
@@ -839,7 +855,7 @@ func postTelegramMessage(ctx context.Context, token string, chatID int64, text s
 	if strings.TrimSpace(token) == "" || chatID == 0 || strings.TrimSpace(text) == "" {
 		return nil
 	}
-	url := telegramAPIBase + token + "/sendMessage"
+	url := telegramAPIBaseURL + token + "/sendMessage"
 	for _, chunk := range telegramMessageChunks(text) {
 		if err := postTelegramMessageChunk(ctx, url, chatID, chunk); err != nil {
 			return err
