@@ -118,6 +118,12 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 	defer func() { _ = audit.Close() }()
 	audit.EmitRunStart(cfg, prompt)
 
+	store, overMsg := checkAndStartUsage(cfg)
+	if overMsg != "" {
+		return overMsg, nil
+	}
+	var totalUsage agentsdk.Usage
+
 	input := []agentsdk.RunItem(nil)
 	if session != nil {
 		input = append(input, session.history...)
@@ -151,6 +157,7 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 			audit.EmitRunError(err)
 			return "", err
 		}
+		totalUsage.Add(result.Usage)
 		for i := range result.NewItems {
 			audit.EmitRunItem(&result.NewItems[i])
 		}
@@ -163,6 +170,7 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 				session.history = items
 			}
 			audit.EmitRunEnd(result)
+			recordUsage(cfg, store, started, totalUsage, meta.Channel, stderr)
 			finalText := strings.TrimSpace(result.FinalText())
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)

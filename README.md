@@ -19,6 +19,7 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 - Google Connect: a hosted SSO broker so users grant Google access (Gmail, Calendar) once and the assistant gets short-lived tokens, instead of pasting expiring tokens or running Google MCP servers. Includes read-only Calendar agent tools (list events, event details).
 - `family-deploy` to stand up one containerized assistant per family member or freeloader, plus one OAuth refresher.
 - Small authenticated local JSON gateway for trusted local automation.
+- Hosted / multi-user metering: per-user token usage, local monthly token quotas with friendly enforcement, an authenticated `GET /usage` endpoint, and optional Langfuse observability — for one assistant instance per subscriber.
 
 ## Install
 
@@ -287,7 +288,7 @@ Integrations are scoped explicitly:
 - Private and loopback URL access for web tools is disabled unless
   `--private-network` is set.
 - Telegram and Gmail poll outbound only. The local gateway requires a bearer
-  token before accepting `/v1/messages`.
+  token before accepting `/v1/messages` and `GET /usage`.
 - Audit logging is opt-in with `--audit`. Audit events redact common bearer
   tokens, API keys, GitHub tokens, Telegram bot tokens, and secret-like JSON
   fields.

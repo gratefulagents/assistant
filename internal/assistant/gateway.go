@@ -71,6 +71,18 @@ func (g *gateway) routes() http.Handler {
 			writeGatewayError(w, err)
 		}
 	})
+	mux.HandleFunc("GET /usage", func(w http.ResponseWriter, r *http.Request) {
+		if !g.authorized(r, g.cfg.GatewayToken) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		store, err := usageStoreFor(g.cfg)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, store.Snapshot())
+	})
 	return mux
 }
 

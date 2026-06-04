@@ -82,6 +82,13 @@ type appConfig struct {
 	Serve                       bool
 	GatewayAddr                 string
 	GatewayToken                string
+	UserID                      string
+	TokenLimit                  int64
+	UsagePath                   string
+	LangfuseEnabled             bool
+	LangfuseHost                string
+	LangfusePublicKey           string
+	LangfuseSecretKey           string
 	TelegramBotToken            string
 	TelegramAllowedUsers        stringListFlag
 	TelegramAllowedChats        stringListFlag
@@ -241,6 +248,13 @@ func defaultConfig() appConfig {
 		TranscriptLogPath:         strings.TrimSpace(os.Getenv("ASSISTANT_TRANSCRIPT_LOG")),
 		GatewayAddr:               firstNonEmpty(os.Getenv("ASSISTANT_GATEWAY_ADDR"), ":8080"),
 		GatewayToken:              strings.TrimSpace(os.Getenv("ASSISTANT_GATEWAY_TOKEN")),
+		UserID:                    strings.TrimSpace(os.Getenv("ASSISTANT_USER_ID")),
+		TokenLimit:                envInt64("ASSISTANT_TOKEN_LIMIT", 0),
+		UsagePath:                 strings.TrimSpace(os.Getenv("ASSISTANT_USAGE_PATH")),
+		LangfuseEnabled:           envBool("ASSISTANT_LANGFUSE", false),
+		LangfuseHost:              firstNonEmpty(os.Getenv("ASSISTANT_LANGFUSE_HOST"), "https://cloud.langfuse.com"),
+		LangfusePublicKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_PUBLIC_KEY")),
+		LangfuseSecretKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_SECRET_KEY")),
 		TelegramBotToken:          strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
 		TelegramAllowedUsers:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
 		TelegramAllowedChats:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),

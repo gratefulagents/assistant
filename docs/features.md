@@ -551,6 +551,58 @@ clear that conversation's in-process history.
 The gateway fails closed unless `ASSISTANT_GATEWAY_TOKEN` or `--gateway-token`
 is set and supplied as a bearer token.
 
+Usage snapshot (per-user token accounting, see below):
+
+```sh
+curl -s http://localhost:8080/usage \
+  -H "authorization: Bearer $ASSISTANT_GATEWAY_TOKEN"
+```
+
+## Hosted / Multi-User Metering and Quotas
+
+For a hosted model where each paying subscriber gets their own assistant
+instance, Assistant meters token usage per user, enforces a local monthly token
+quota, and reports usage. One instance serves exactly one user; an external
+orchestrator stamps out a container per subscription using env-only
+configuration (no interactive setup).
+
+Configuration (all optional; absent means single-user/unlimited):
+
+| Env | Meaning |
+| --- | --- |
+| `ASSISTANT_USER_ID` | Identity of the user this instance serves. |
+| `ASSISTANT_TOKEN_LIMIT` | Monthly quota in total tokens (input + output). `0`/unset = unlimited. |
+| `ASSISTANT_USAGE_PATH` | Usage counter file (default `<state-dir>/usage.json`). |
+| `ASSISTANT_LANGFUSE` | Enable the optional Langfuse observability sink. |
+| `ASSISTANT_LANGFUSE_HOST` | Langfuse host (default `https://cloud.langfuse.com`). |
+| `ASSISTANT_LANGFUSE_PUBLIC_KEY` / `ASSISTANT_LANGFUSE_SECRET_KEY` | Langfuse API keys. |
+
+How it works:
+
+- **Metering.** Every successful turn accumulates `input + output` tokens (and
+  cache tokens, surfaced but not counted toward the quota) into a local
+  JSON counter, written atomically. Usage from approval-resume iterations within
+  a turn is summed, and a turn is attributed to the month in which it started.
+- **Monthly window.** Counters reset at the start of each UTC calendar month.
+- **Enforcement (local + hard).** Before each new prompt, if the user is at or
+  over `ASSISTANT_TOKEN_LIMIT`, the model call is never started; instead the
+  user receives a friendly "quota exceeded" reply on every channel (terminal,
+  Telegram, Gmail, gateway). A single in-flight turn may slightly overshoot the
+  cap — acceptable for a soft monthly limit. Failed/aborted runs do not count.
+- **Reporting.** The authenticated `GET /usage` gateway endpoint returns the
+  live snapshot (`user_id`, `window_start`, `input_tokens`, `output_tokens`,
+  `total_tokens`, cache tokens, `limit`, `remaining`, `exceeded`, `updated_at`).
+  An orchestrator can poll it directly.
+- **Langfuse (optional).** When enabled, each completed turn is exported as a
+  trace + generation carrying `userId`, model, and token usage for fleet-wide
+  dashboards and cost. It is best-effort and asynchronous: it is never on the
+  enforcement hot path, and failures are logged, not fatal.
+
+Minimal env set to stamp out one assistant per subscriber (single container, no
+interactive setup): provider credentials, `ASSISTANT_USER_ID`,
+`ASSISTANT_TOKEN_LIMIT`, `ASSISTANT_GATEWAY_TOKEN`, the channel token(s) you
+use (e.g. `ASSISTANT_TELEGRAM_BOT_TOKEN`), and optionally the Langfuse keys.
+
 ## Family Deploy
 
 `assistant family-deploy` interactively configures and manages a fleet of

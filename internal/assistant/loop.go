@@ -81,6 +81,13 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 	}()
 	audit.EmitRunStart(cfg, prompt)
 
+	store, overMsg := checkAndStartUsage(cfg)
+	if overMsg != "" {
+		fmt.Fprintln(stdout, overMsg)
+		return nil
+	}
+	var totalUsage agentsdk.Usage
+
 	items := []agentsdk.RunItem(nil)
 	if history != nil {
 		items = append(items, (*history)...)
@@ -114,6 +121,7 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 			audit.EmitRunError(err)
 			return err
 		}
+		totalUsage.Add(result.Usage)
 		if !wroteDelta && strings.TrimSpace(result.FinalText()) != "" {
 			fmt.Fprintln(stdout, result.FinalText())
 		} else if wroteDelta {
@@ -129,6 +137,7 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 				*history = items
 			}
 			audit.EmitRunEnd(result)
+			recordUsage(cfg, store, started, totalUsage, meta.Channel, stderr)
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, strings.TrimSpace(result.FinalText())); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
