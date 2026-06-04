@@ -1293,14 +1293,22 @@ func telegramExtractTextNode(b *strings.Builder, node *nethtml.Node) {
 
 func loadTelegramOffset(cfg appConfig) (int64, error) {
 	var state telegramOffsetState
-	if _, err := readJSONFile(stateFilePath(cfg, "telegram_offset.json"), &state); err != nil {
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := kvGetOrImport(db, "telegram_offset", stateFilePath(cfg, "telegram_offset.json"), &state); err != nil {
 		return 0, err
 	}
 	return state.Offset, nil
 }
 
 func saveTelegramOffset(cfg appConfig, offset int64) error {
-	return writeJSONFile(stateFilePath(cfg, "telegram_offset.json"), telegramOffsetState{Offset: offset})
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return err
+	}
+	return kvPut(db, "telegram_offset", telegramOffsetState{Offset: offset})
 }
 
 func sleepContext(ctx context.Context, d time.Duration) bool {

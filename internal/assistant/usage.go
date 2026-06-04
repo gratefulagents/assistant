@@ -3,6 +3,8 @@
 package assistant
 
 import (
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -47,7 +49,7 @@ type usageSnapshot struct {
 // not lose updates to each other via separate load-modify-write cycles.
 type usageStore struct {
 	mu    sync.Mutex
-	path  string
+	db    *sql.DB
 	rec   usageRecord
 	limit int64
 }
@@ -69,16 +71,28 @@ func usagePath(cfg appConfig) string {
 // loading it from disk on first use. The mutable limit and user id are
 // refreshed on every call so config changes take effect without a restart.
 func usageStoreFor(cfg appConfig) (*usageStore, error) {
-	path := usagePath(cfg)
+	path := expandUserPath(usagePath(cfg))
+	// There is one "usage" row per state.db, so key the singleton by the
+	// canonical DB directory rather than the file path. Two usage paths in the
+	// same directory therefore share one in-memory accountant and never lose
+	// increments to a stale sibling.
+	dir := filepath.Dir(path)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	usageStoresMu.Lock()
 	defer usageStoresMu.Unlock()
-	if s, ok := usageStores[path]; ok {
+	if s, ok := usageStores[dir]; ok {
 		s.refresh(cfg.UserID, cfg.TokenLimit)
 		return s, nil
 	}
-	s := &usageStore{path: path, limit: cfg.TokenLimit}
+	db, err := stateDBForDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	s := &usageStore{db: db, limit: cfg.TokenLimit}
 	var rec usageRecord
-	exists, err := readJSONFile(path, &rec)
+	exists, err := kvGetOrImport(db, "usage", path, &rec)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +100,7 @@ func usageStoreFor(cfg appConfig) (*usageStore, error) {
 		s.rec = rec
 	}
 	s.refresh(cfg.UserID, cfg.TokenLimit)
-	usageStores[path] = s
+	usageStores[dir] = s
 	return s, nil
 }
 
@@ -192,7 +206,7 @@ func (s *usageStore) AddAt(started time.Time, u agentsdk.Usage) error {
 	s.rec.CacheCreateTokens += u.CacheCreateTokens
 	s.rec.Requests += int64(u.Requests)
 	s.rec.UpdatedAt = time.Now().UTC()
-	return writeJSONFile(s.path, s.rec)
+	return kvPut(s.db, "usage", s.rec)
 }
 
 // quotaExceededMessage is the friendly reply returned to a user who has reached

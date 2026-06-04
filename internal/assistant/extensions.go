@@ -136,8 +136,12 @@ func newMemoryStore(cfg appConfig) (sdkprojectstate.Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize memory embedder: %w", err)
 	}
-	store, err := sdkprojectstate.NewFilesystemStore(sdkprojectstate.FilesystemOptions{
-		StateDir:  cfg.StateDir,
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("open state database: %w", err)
+	}
+	store, err := sdkprojectstate.NewSQLiteStore(sdkprojectstate.SQLiteOptions{
+		DB:        db,
 		ProjectID: "personal-assistant",
 		WorkDir:   cfg.WorkDir,
 		Actor:     "assistant",

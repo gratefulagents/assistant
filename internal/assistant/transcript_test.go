@@ -3,7 +3,7 @@
 package assistant
 
 import (
-	"os"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,11 +40,18 @@ func TestRecordTranscriptTurnRedactsAndSearches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(cfg.TranscriptLogPath)
+	turns, err := readTranscriptTurns(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(data)
+	if len(turns) != 1 {
+		t.Fatalf("stored turns = %d, want 1", len(turns))
+	}
+	stored, err := json.Marshal(turns[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(stored)
 	if strings.Contains(text, "sk-secret123") || strings.Contains(text, "sk-toolsecret") {
 		t.Fatalf("transcript leaked secret: %s", text)
 	}

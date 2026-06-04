@@ -6,12 +6,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -208,66 +208,132 @@ func recordTranscriptTurn(ctx context.Context, cfg appConfig, meta transcriptCon
 }
 
 func appendTranscriptTurn(cfg appConfig, turn transcriptTurn) error {
-	path := transcriptFilePath(cfg)
-	if strings.TrimSpace(path) == "" {
-		return errors.New("transcript path is empty")
-	}
 	data, err := json.Marshal(turn)
 	if err != nil {
 		return err
 	}
-	data = []byte(redactAuditText(string(data)))
+	redacted := redactAuditText(string(data))
 
 	transcriptFileMu.Lock()
 	defer transcriptFileMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	db, err := stateDBFor(cfg)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	if _, err := file.Write(append(data, '\n')); err != nil {
+	if err := ensureTranscriptImport(cfg, db); err != nil {
 		return err
 	}
-	return nil
+	_, err = db.Exec(
+		`INSERT INTO assistant_transcript_turns (id, session_id, started_at, ended_at, data)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET
+				session_id = excluded.session_id,
+				started_at = excluded.started_at,
+				ended_at   = excluded.ended_at,
+				data       = excluded.data`,
+		turn.ID, turn.SessionID, turn.StartedAt.UnixNano(), turn.EndedAt.UnixNano(), redacted)
+	return err
 }
 
 func readTranscriptTurns(ctx context.Context, cfg appConfig) ([]transcriptTurn, error) {
-	path := transcriptFilePath(cfg)
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureTranscriptImport(cfg, db); err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx,
+		`SELECT data FROM assistant_transcript_turns ORDER BY rowid ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var turns []transcriptTurn
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var turn transcriptTurn
+		if err := json.Unmarshal([]byte(raw), &turn); err != nil {
+			return nil, fmt.Errorf("parse transcript row: %w", err)
+		}
+		turns = append(turns, turn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return turns, nil
+}
+
+// transcriptImport guards the one-shot import of a legacy transcripts.ndjson
+// file into the database. A path is recorded as imported only after a fully
+// successful, committed import, so a transient failure (bad line, DB error) is
+// retried on the next call instead of leaving a partial import wedged.
+var (
+	transcriptImportMu sync.Mutex
+	transcriptImported = map[string]bool{}
+)
+
+// ensureTranscriptImport migrates a legacy transcripts.ndjson file into the
+// database exactly once per process. All rows are inserted inside a single
+// transaction; only after it commits is the legacy file renamed to <path>.bak
+// and the path marked imported. It is a no-op when no legacy file exists.
+func ensureTranscriptImport(cfg appConfig, db *sql.DB) error {
+	path := strings.TrimSpace(transcriptFilePath(cfg))
+	if path == "" {
+		return nil
+	}
+	transcriptImportMu.Lock()
+	defer transcriptImportMu.Unlock()
+	if transcriptImported[path] {
+		return nil
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			transcriptImported[path] = true
+			return nil
 		}
-		return nil, err
+		return err
 	}
 	defer file.Close()
 
-	var turns []transcriptTurn
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
 		var turn transcriptTurn
 		if err := json.Unmarshal([]byte(line), &turn); err != nil {
-			return nil, fmt.Errorf("parse transcript %s: %w", path, err)
+			return fmt.Errorf("parse legacy transcript %s: %w", path, err)
 		}
-		turns = append(turns, turn)
+		if _, err := tx.Exec(
+			`INSERT INTO assistant_transcript_turns (id, session_id, started_at, ended_at, data)
+				VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT(id) DO NOTHING`,
+			turn.ID, turn.SessionID, turn.StartedAt.UnixNano(), turn.EndedAt.UnixNano(), line); err != nil {
+			return err
+		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return err
 	}
-	return turns, nil
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_ = os.Rename(path, path+".bak")
+	transcriptImported[path] = true
+	return nil
 }
 
 func searchTranscriptTurns(ctx context.Context, cfg appConfig, in transcriptSearchInput) (transcriptSearchResult, error) {

@@ -158,7 +158,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.AuditLevel, "audit-level", cfg.AuditLevel, "audit verbosity: low or full")
 	fs.StringVar(&cfg.AuditLogPath, "audit-log", cfg.AuditLogPath, "append-only audit log path; defaults to state-dir/audit.ndjson")
 	fs.BoolVar(&cfg.EnableTranscripts, "transcripts", cfg.EnableTranscripts, "persist redacted conversation transcripts for session_search")
-	fs.StringVar(&cfg.TranscriptLogPath, "transcript-log", cfg.TranscriptLogPath, "append-only transcript JSONL path; defaults to state-dir/transcripts.ndjson")
+	fs.StringVar(&cfg.TranscriptLogPath, "transcript-log", cfg.TranscriptLogPath, "legacy transcript JSONL path imported once into state-dir/state.db; defaults to state-dir/transcripts.ndjson")
 	fs.BoolVar(&cfg.Debug, "debug", cfg.Debug, "enable SDK debug logging")
 	fs.StringVar(&cfg.GatewayAddr, "addr", cfg.GatewayAddr, "gateway listen address for serve mode")
 	fs.StringVar(&cfg.GatewayToken, "gateway-token", cfg.GatewayToken, "bearer token for generic gateway endpoint")

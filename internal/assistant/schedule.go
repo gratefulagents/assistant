@@ -88,7 +88,7 @@ type scheduleRunResult struct {
 }
 
 func runScheduler(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {
-	fmt.Fprintf(stderr, "assistant scheduler watching %s\n", scheduleFilePath(cfg))
+	fmt.Fprintf(stderr, "assistant scheduler watching %s\n", stateFilePath(cfg, stateDBFileName))
 	if err := runDueSchedules(ctx, cfg, stdout, stderr); err != nil {
 		return err
 	}
@@ -694,8 +694,11 @@ func nextScheduleRun(entry scheduleEntry, after time.Time) (time.Time, error) {
 
 func readScheduleStateLocked(cfg appConfig) (scheduleState, error) {
 	var state scheduleState
-	_, err := readJSONFile(scheduleFilePath(cfg), &state)
+	db, err := stateDBFor(cfg)
 	if err != nil {
+		return scheduleState{}, err
+	}
+	if _, err := kvGetOrImport(db, "schedules", scheduleFilePath(cfg), &state); err != nil {
 		return scheduleState{}, err
 	}
 	if state.Schedules == nil {
@@ -705,7 +708,11 @@ func readScheduleStateLocked(cfg appConfig) (scheduleState, error) {
 }
 
 func writeScheduleStateLocked(cfg appConfig, state scheduleState) error {
-	return writeJSONFile(scheduleFilePath(cfg), state)
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return err
+	}
+	return kvPut(db, "schedules", state)
 }
 
 func newScheduleID() string {

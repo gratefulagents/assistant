@@ -266,7 +266,11 @@ func replySubject(subject string) string {
 
 func loadGmailSeenState(cfg appConfig) (gmailSeenState, error) {
 	state := gmailSeenState{Seen: map[string]bool{}}
-	if _, err := readJSONFile(stateFilePath(cfg, "gmail_seen.json"), &state); err != nil {
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return state, err
+	}
+	if _, err := kvGetOrImport(db, "gmail_seen", stateFilePath(cfg, "gmail_seen.json"), &state); err != nil {
 		return state, err
 	}
 	if state.Seen == nil {
@@ -279,5 +283,9 @@ func saveGmailSeenState(cfg appConfig, state gmailSeenState) error {
 	if state.Seen == nil {
 		state.Seen = map[string]bool{}
 	}
-	return writeJSONFile(stateFilePath(cfg, "gmail_seen.json"), state)
+	db, err := stateDBFor(cfg)
+	if err != nil {
+		return err
+	}
+	return kvPut(db, "gmail_seen", state)
 }
