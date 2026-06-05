@@ -172,6 +172,15 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 			audit.EmitRunEnd(result)
 			recordUsage(cfg, store, started, totalUsage, meta.Channel, stderr)
 			finalText := strings.TrimSpace(result.FinalText())
+			if finalText == "" {
+				// The run can end without a string FinalOutput when the model
+				// pauses on a signal tool (AskUserQuestion / present_plan): it
+				// emits an assistant message and a tool call but no "final
+				// output". Channels are non-streaming, so without this fallback
+				// the user would only see the generic "Done." placeholder
+				// instead of the assistant's actual reply and question.
+				finalText = strings.TrimSpace(replyFromTurnItems(newItems))
+			}
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
@@ -200,6 +209,101 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 		items = append(items, approvalItems...)
 		turnItems = append(turnItems, cloneRunItems(approvalItems)...)
 	}
+}
+
+// replyFromTurnItems reconstructs a channel reply from a turn's run items when
+// the run produced no string FinalOutput. This happens when the model pauses on
+// a signal tool (AskUserQuestion / present_plan): the assistant's text and the
+// pending question live in the run items rather than in FinalOutput. It returns
+// the assistant message text followed by any question and its choices so that
+// non-streaming channels deliver the real content instead of "Done.".
+func replyFromTurnItems(items []agentsdk.RunItem) string {
+	var assistantText []string
+	for _, item := range items {
+		if item.Type == agentsdk.RunItemMessage && item.Message != nil {
+			if t := strings.TrimSpace(item.Message.Text); t != "" {
+				assistantText = append(assistantText, t)
+			}
+		}
+	}
+	parts := []string{}
+	if len(assistantText) > 0 {
+		parts = append(parts, strings.Join(assistantText, "\n\n"))
+	}
+	for _, item := range items {
+		if item.Type != agentsdk.RunItemToolCall || item.ToolCall == nil {
+			continue
+		}
+		switch item.ToolCall.Name {
+		case "AskUserQuestion":
+			if q := formatAskUserQuestion(item.ToolCall.Input, len(assistantText) == 0); q != "" {
+				parts = append(parts, q)
+			}
+		case "present_plan":
+			if p := formatPresentPlan(item.ToolCall.Input); p != "" {
+				parts = append(parts, p)
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n\n"))
+}
+
+// formatAskUserQuestion renders an AskUserQuestion tool input as text. The
+// question is included only when includeQuestion is true (i.e. the assistant
+// did not already pose it in its message), to avoid duplicating it. Choices are
+// always listed so the user knows the available options.
+func formatAskUserQuestion(raw json.RawMessage, includeQuestion bool) string {
+	var in struct {
+		Question string   `json:"question"`
+		Choices  []string `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	if includeQuestion {
+		if q := strings.TrimSpace(in.Question); q != "" {
+			b.WriteString(q)
+		}
+	}
+	for _, c := range in.Choices {
+		if c = strings.TrimSpace(c); c == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("• " + c)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// formatPresentPlan renders a present_plan tool input as text so the proposed
+// plan and its action labels are delivered to the user instead of being
+// silently dropped on pause.
+func formatPresentPlan(raw json.RawMessage) string {
+	var in struct {
+		Summary string `json:"summary"`
+		Actions []struct {
+			Label string `json:"label"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	if s := strings.TrimSpace(in.Summary); s != "" {
+		b.WriteString(s)
+	}
+	for _, a := range in.Actions {
+		if label := strings.TrimSpace(a.Label); label != "" {
+			if b.Len() > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString("• " + label)
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func postJSON(ctx context.Context, url, bearer string, payload any) error {
