@@ -594,8 +594,15 @@ How it works:
   `total_tokens`, cache tokens, `limit`, `remaining`, `exceeded`, `updated_at`).
   An orchestrator can poll it directly.
 - **Langfuse (optional).** When enabled, each completed turn is exported as a
-  trace + generation carrying `userId`, model, and token usage for fleet-wide
-  dashboards and cost. It is best-effort and asynchronous: it is never on the
+  trace + generation + a span per tool call. The trace carries `userId`,
+  `sessionId` (grouping a conversation's turns), the user prompt as input and
+  the assistant reply as output, plus tags (channel, model, mode). The
+  generation carries the model, model parameters (reasoning, verbosity,
+  max_tokens), token usage (including cache tokens), and the full redacted
+  message list (messages, tool calls, tool outputs, reasoning). Each tool call
+  becomes a span paired with its output and flagged on error. All free text is
+  redacted and capped, and the batch is trimmed to stay within Langfuse's
+  ingestion size limit. It is best-effort and asynchronous: it is never on the
   enforcement hot path, and failures are logged, not fatal.
 
 Minimal env set to stamp out one assistant per subscriber (single container, no

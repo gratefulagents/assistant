@@ -137,8 +137,9 @@ func runPrompt(ctx context.Context, cfg appConfig, prompt string, approvalIn io.
 				*history = items
 			}
 			audit.EmitRunEnd(result)
-			recordUsage(cfg, store, started, totalUsage, meta.Channel, stderr)
-			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, strings.TrimSpace(result.FinalText())); err != nil {
+			finalText := strings.TrimSpace(result.FinalText())
+			recordUsage(cfg, store, started, totalUsage, meta, prompt, finalText, turnItems, stderr)
+			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
 			triggerAfterTurnMemoryReview(ctx, cfg, meta.Channel, started, stderr, meta.Channel != "cli")

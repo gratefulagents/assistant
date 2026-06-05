@@ -170,7 +170,6 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 				session.history = items
 			}
 			audit.EmitRunEnd(result)
-			recordUsage(cfg, store, started, totalUsage, meta.Channel, stderr)
 			finalText := strings.TrimSpace(result.FinalText())
 			if finalText == "" {
 				// The run can end without a string FinalOutput when the model
@@ -181,6 +180,7 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 				// instead of the assistant's actual reply and question.
 				finalText = strings.TrimSpace(replyFromTurnItems(newItems))
 			}
+			recordUsage(cfg, store, started, totalUsage, meta, prompt, finalText, turnItems, stderr)
 			if err := recordTranscriptTurn(ctx, cfg, meta, prompt, cfg.ActivePhase, started, turnItems, finalText); err != nil {
 				fmt.Fprintln(stderr, "[log] transcript warning:", err)
 			}
