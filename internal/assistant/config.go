@@ -26,6 +26,7 @@ const (
 type appConfig struct {
 	Provider                    string
 	Model                       string
+	ModelFallbacks              stringListFlag
 	BaseURL                     string
 	APIMode                     string
 	APIKey                      string
@@ -116,6 +117,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.ConfigPath, "config", cfg.ConfigPath, "assistant extension config JSON")
 	fs.StringVar(&cfg.Provider, "provider", cfg.Provider, "provider: openai-oauth, openai-api, or openrouter")
 	fs.StringVar(&cfg.Model, "model", cfg.Model, "model name")
+	fs.Var(&cfg.ModelFallbacks, "model-fallback", "fallback model tried after --model when unavailable (OpenRouter \"models\" routing); may be repeated")
 	fs.StringVar(&cfg.BaseURL, "base-url", cfg.BaseURL, "OpenAI base URL override")
 	fs.StringVar(&cfg.APIMode, "api-mode", cfg.APIMode, "OpenAI API mode override")
 	fs.StringVar(&cfg.APIKey, "api-key", cfg.APIKey, "OpenAI API key for --provider openai-api")
@@ -205,6 +207,7 @@ func defaultConfig() appConfig {
 		ConfigPath:                firstNonEmpty(os.Getenv("ASSISTANT_CONFIG"), defaultConfigPath()),
 		Provider:                  firstNonEmpty(os.Getenv("ASSISTANT_PROVIDER"), providerOpenAIOAuth),
 		Model:                     strings.TrimSpace(os.Getenv("ASSISTANT_MODEL")),
+		ModelFallbacks:            splitCommaListEnv(os.Getenv("ASSISTANT_MODEL_FALLBACKS")),
 		BaseURL:                   firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
 		APIMode:                   strings.TrimSpace(os.Getenv("ASSISTANT_OPENAI_API_MODE")),
 		APIKey:                    firstNonEmpty(os.Getenv("ASSISTANT_OPENAI_API_KEY"), os.Getenv("OPENAI_API_KEY")),
@@ -536,6 +539,8 @@ providers:
   --provider openai-oauth   use OpenAI OAuth credentials
   --provider openai-api     use OPENAI_API_KEY or --api-key
   --provider openrouter     use OPENROUTER_API_KEY or --api-key
+  --model-fallback MODEL    fallback model tried when --model is unavailable
+                            (OpenRouter "models" routing); repeat for more
 
 extension config:
   --config PATH             assistant JSON config; defaults to ~/.gratefulagents/assistant/config.json
@@ -565,5 +570,6 @@ examples:
   assistant family-deploy
   assistant --provider openai-api "what changed in this repo?"
   OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model openai/gpt-4o-mini
+  OPENROUTER_API_KEY=sk-or-... assistant --provider openrouter --model deepseek/deepseek-v4-pro --model-fallback deepseek/deepseek-chat --model-fallback openrouter/auto
 `)
 }

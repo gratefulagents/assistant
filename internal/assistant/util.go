@@ -163,6 +163,19 @@ func splitListEnv(value string) []string {
 	return out
 }
 
+// splitCommaListEnv splits a comma-separated env value without treating ':' as a
+// delimiter. Model identifiers can contain a ':' variant suffix (e.g.
+// "deepseek/deepseek-chat:free", "openrouter/auto"), so colon must be preserved.
+func splitCommaListEnv(value string) []string {
+	out := make([]string, 0)
+	for _, field := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 func uniqueStrings(values []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(values))

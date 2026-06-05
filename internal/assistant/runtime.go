@@ -59,6 +59,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 	rt := sdkruntime.Config{
 		Provider:                sdkProviderName(cfg.Provider),
 		Model:                   cfg.Model,
+		ModelFallbacks:          cfg.ModelFallbacks,
 		BaseURL:                 cfg.BaseURL,
 		APIMode:                 cfg.APIMode,
 		WorkDir:                 cfg.WorkDir,

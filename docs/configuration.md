@@ -67,6 +67,34 @@ assistant
 Browse the full catalog of available slugs at
 [openrouter.ai/models](https://openrouter.ai/models).
 
+#### Model fallbacks
+
+OpenRouter can automatically retry the next model when the primary one is
+unavailable, rate-limited, or errors. Pass one or more `--model-fallback` flags
+(repeatable), or set `ASSISTANT_MODEL_FALLBACKS` to a comma-separated list. The
+primary `--model` is always tried first, then each fallback in order; Assistant
+sends them as OpenRouter's request-body `models` array.
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...
+assistant --provider openrouter \
+  --model deepseek/deepseek-v4-pro \
+  --model-fallback deepseek/deepseek-chat \
+  --model-fallback openrouter/auto
+```
+
+```sh
+export ASSISTANT_PROVIDER=openrouter
+export ASSISTANT_MODEL=deepseek/deepseek-v4-pro
+export ASSISTANT_MODEL_FALLBACKS=deepseek/deepseek-chat,openrouter/auto
+export OPENROUTER_API_KEY=sk-or-...
+assistant
+```
+
+Fallbacks apply to OpenAI-compatible providers that honor the `models` array
+(OpenRouter, and other chat-completions backends). They are ignored on the
+OpenAI Responses API path.
+
 Use `--openai-oauth-refresh=false` for long-running Assistant processes that
 share one OAuth file. Then run `assistant oauth-refresh` from a single process;
 it refreshes immediately and then every hour by default. Pass
@@ -77,6 +105,7 @@ Provider-specific environment variables:
 ```text
 ASSISTANT_PROVIDER
 ASSISTANT_MODEL
+ASSISTANT_MODEL_FALLBACKS
 ASSISTANT_OPENAI_BASE_URL
 OPENAI_BASE_URL
 ASSISTANT_OPENAI_API_MODE
