@@ -1,9 +1,80 @@
 # syntax=docker/dockerfile:1
+#
+# Runtime image for the assistant backend.
+#
+# The agent's Bash tool shells out (`bash -c <cmd>`) and the model frequently
+# reaches for common CLIs (git, curl, python3, jq, ripgrep, ...). The previous
+# gcr.io/distroless/static image shipped only the Go binary and no shell, so any
+# Bash-tool command failed with `exec: "bash": executable file not found`.
+#
+# We therefore base on debian-slim and install a curated toolset. Using apt keeps
+# the image arch-agnostic, so the same Dockerfile builds for linux/amd64 and
+# linux/arm64 (the two platforms GoReleaser targets) with no per-arch logic.
+#
+# The Kubernetes runtime enforces RunAsNonRoot and coerces the uid/gid to 65532
+# (the id the old distroless "nonroot" user had), with a read-only root
+# filesystem and a writable emptyDir at /tmp. We recreate a matching nonroot
+# user at 65532 so the container starts under that policy, and point HOME at /tmp
+# so tools that want a writable home work despite the read-only rootfs.
 
-FROM gcr.io/distroless/static-debian12:nonroot
+FROM debian:bookworm-slim
 
-# GoReleaser provides already-built platform binaries in the build context.
+# Single layer: refresh apt, install the assistant's runtime toolbelt, then drop
+# the package lists to keep the image lean. --no-install-recommends avoids
+# pulling in docs/extras we don't need.
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        tzdata \
+        bash \
+        coreutils \
+        findutils \
+        grep \
+        sed \
+        gawk \
+        less \
+        procps \
+        git \
+        openssh-client \
+        gnupg \
+        curl \
+        wget \
+        ripgrep \
+        fd-find \
+        jq \
+        file \
+        tar \
+        gzip \
+        xz-utils \
+        bzip2 \
+        zip \
+        unzip \
+        python3 \
+        python3-venv \
+        python3-pip \
+        nodejs \
+        npm; \
+    ln -sf "$(command -v fdfind)" /usr/local/bin/fd; \
+    rm -rf /var/lib/apt/lists/*
+
+# Recreate the "nonroot" identity at the uid/gid the cluster pins (65532) so the
+# enforced RunAsNonRoot/RunAsUser=65532 policy maps to a real, named account.
+RUN set -eux; \
+    groupadd --gid 65532 nonroot; \
+    useradd --uid 65532 --gid 65532 --shell /bin/bash --home-dir /home/nonroot --create-home nonroot
+
+# GoReleaser provides already-built platform binaries in the build context under
+# the target platform path (e.g. linux/amd64/assistant).
 ARG TARGETPLATFORM
 COPY ${TARGETPLATFORM}/assistant /usr/local/bin/assistant
+
+# HOME points at the writable /tmp emptyDir the pod mounts, so tools that scribble
+# into $HOME (git, pip caches, npm) keep working under the read-only root fs.
+ENV HOME=/tmp \
+    PATH=/usr/local/bin:/usr/bin:/bin
+
+USER 65532:65532
+WORKDIR /tmp
 
 ENTRYPOINT ["/usr/local/bin/assistant"]
