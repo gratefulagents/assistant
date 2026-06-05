@@ -64,7 +64,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		APIMode:                 cfg.APIMode,
 		WorkDir:                 cfg.WorkDir,
 		AgentName:               "assistant",
-		Instructions:            instructionsWithMemory(extensions.MemoryPrime),
+		Instructions:            instructionsWithMemory(cfg.Instructions, extensions.MemoryPrime),
 		SessionMode:             sessionMode,
 		ActiveMode:              activeMode,
 		ActivePhase:             activePhase,
@@ -147,17 +147,29 @@ func defaultInstructions() string {
 	}, " ")
 }
 
+// baseInstructions returns the system prompt for the run: the operator-provided
+// override when configured (--instructions / ASSISTANT_INSTRUCTIONS /
+// --instructions-file / config file), otherwise the built-in default.
+func baseInstructions(custom string) string {
+	if c := strings.TrimSpace(custom); c != "" {
+		return c
+	}
+	return defaultInstructions()
+}
+
 // instructionsWithMemory appends a primed durable-memory block to the base
 // instructions so the agent starts each run already aware of pinned memories
 // and active tasks, without depending on it to call prime_context. When there
 // is nothing durable to surface, the base instructions are returned unchanged.
-func instructionsWithMemory(prime string) string {
+// custom overrides the built-in default instructions when non-empty.
+func instructionsWithMemory(custom, prime string) string {
+	base := baseInstructions(custom)
 	prime = strings.TrimSpace(prime)
 	if prime == "" {
-		return defaultInstructions()
+		return base
 	}
 	return strings.Join([]string{
-		defaultInstructions(),
+		base,
 		"The following durable project state was loaded for this run. Treat it as known background and prefer it over re-deriving facts; call memory_recall for anything not covered here.",
 		prime,
 	}, "\n\n")

@@ -131,6 +131,8 @@ Important runtime defaults:
 
 ```text
 ASSISTANT_WORKDIR              current directory
+ASSISTANT_INSTRUCTIONS         (unset; built-in default system prompt)
+ASSISTANT_INSTRUCTIONS_FILE    (unset; read system prompt from a file)
 ASSISTANT_STATE_DIR            ~/.gratefulagents/assistant/state
 ASSISTANT_CONFIG               ~/.gratefulagents/assistant/config.json
 ASSISTANT_PERMISSION           workspace-write
@@ -162,6 +164,22 @@ ASSISTANT_AUDIT_LOG            ~/.gratefulagents/assistant/state/audit.ndjson
 ASSISTANT_TRANSCRIPTS          true
 ASSISTANT_TRANSCRIPT_LOG       ~/.gratefulagents/assistant/state/transcripts.ndjson
 ```
+
+## System Prompt
+
+Assistant ships with a built-in system prompt. Override it without rebuilding
+the binary, in precedence order (first non-empty wins):
+
+1. `--instructions "<text>"` flag (or `ASSISTANT_INSTRUCTIONS`)
+2. `--instructions-file <path>` flag (or `ASSISTANT_INSTRUCTIONS_FILE`)
+3. `"instructions"` / `"instructionsPath"` in the JSON config file
+4. the built-in default
+
+The file form is convenient for long prompts and for Kubernetes deployments,
+where a ConfigMap can be mounted and pointed at with `ASSISTANT_INSTRUCTIONS_FILE`.
+A configured prompt replaces the default base instructions; the durable-memory
+prime block is still appended automatically when pinned memories or active tasks
+are loaded for the run.
 
 `--permission read-only` restricts SDK tool access. `--approval=true` asks
 before approval-gated tool execution in interactive mode, and Telegram mode

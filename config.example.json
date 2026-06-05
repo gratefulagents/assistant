@@ -1,4 +1,5 @@
 {
+  "instructions": "You are Assistant, a helpful personal AI. Be concise and practical.",
   "mcpConfigPaths": [
     "~/.gratefulagents/mcp/base.json",
     "~/projects/home/.mcp.json"

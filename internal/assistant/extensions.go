@@ -18,12 +18,14 @@ import (
 )
 
 type assistantConfigFile struct {
-	MCPServers     map[string]sdkmcp.ServerConfig `json:"mcpServers,omitempty"`
-	MCPConfigPaths stringListFlag                 `json:"mcpConfigPaths,omitempty"`
-	Skills         skillsConfig                   `json:"skills,omitempty"`
-	Approvals      approvalsConfig                `json:"approvals,omitempty"`
-	Plugins        []pluginConfig                 `json:"plugins,omitempty"`
-	Extensions     []pluginConfig                 `json:"extensions,omitempty"`
+	Instructions     string                         `json:"instructions,omitempty"`
+	InstructionsPath string                         `json:"instructionsPath,omitempty"`
+	MCPServers       map[string]sdkmcp.ServerConfig `json:"mcpServers,omitempty"`
+	MCPConfigPaths   stringListFlag                 `json:"mcpConfigPaths,omitempty"`
+	Skills           skillsConfig                   `json:"skills,omitempty"`
+	Approvals        approvalsConfig                `json:"approvals,omitempty"`
+	Plugins          []pluginConfig                 `json:"plugins,omitempty"`
+	Extensions       []pluginConfig                 `json:"extensions,omitempty"`
 }
 
 type approvalsConfig struct {

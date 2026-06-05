@@ -106,6 +106,8 @@ type appConfig struct {
 	GoogleConnectURL            string
 	GoogleScopes                stringListFlag
 	Prompt                      string
+	Instructions                string
+	InstructionsPath            string
 	FileConfig                  assistantConfigFile
 }
 
@@ -128,6 +130,8 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.BoolVar(&openAIOAuthRefresh, "openai-oauth-refresh", openAIOAuthRefresh, "allow OpenAI OAuth access-token refresh during assistant runs")
 	fs.DurationVar(&cfg.OAuthRefreshInterval, "oauth-refresh-interval", cfg.OAuthRefreshInterval, "repeat oauth-refresh every duration; 0 runs once")
 	fs.StringVar(&cfg.WorkDir, "workdir", cfg.WorkDir, "workspace for assistant tools")
+	fs.StringVar(&cfg.Instructions, "instructions", cfg.Instructions, "override the assistant system prompt (inline text); empty uses the built-in default")
+	fs.StringVar(&cfg.InstructionsPath, "instructions-file", cfg.InstructionsPath, "read the assistant system prompt from a file; used only when --instructions is empty")
 	fs.StringVar(&cfg.StateDir, "state-dir", cfg.StateDir, "durable assistant state directory")
 	fs.StringVar(&cfg.Permission, "permission", cfg.Permission, "tool permission: workspace-write or read-only")
 	fs.StringVar(&cfg.Reasoning, "reasoning", cfg.Reasoning, "reasoning level: none, low, medium, high, xhigh")
@@ -217,6 +221,8 @@ func defaultConfig() appConfig {
 		DisableOpenAIOAuthRefresh: !envBool("ASSISTANT_OPENAI_OAUTH_REFRESH", true),
 		OAuthRefreshInterval:      envDuration("ASSISTANT_OPENAI_OAUTH_REFRESH_INTERVAL", defaultOAuthRefreshInterval),
 		WorkDir:                   firstNonEmpty(os.Getenv("ASSISTANT_WORKDIR"), wd),
+		Instructions:              strings.TrimSpace(os.Getenv("ASSISTANT_INSTRUCTIONS")),
+		InstructionsPath:          strings.TrimSpace(os.Getenv("ASSISTANT_INSTRUCTIONS_FILE")),
 		StateDir:                  firstNonEmpty(os.Getenv("ASSISTANT_STATE_DIR"), defaultStateDir()),
 		EmbeddingModel:            strings.TrimSpace(os.Getenv("ASSISTANT_EMBEDDING_MODEL")),
 		EmbeddingBaseURL:          firstNonEmpty(os.Getenv("ASSISTANT_EMBEDDING_BASE_URL"), os.Getenv("ASSISTANT_OPENAI_BASE_URL"), os.Getenv("OPENAI_BASE_URL")),
@@ -357,6 +363,9 @@ func (c *appConfig) validate() error {
 		return err
 	}
 	c.applyFileConfig()
+	if err := c.resolveInstructions(); err != nil {
+		return err
+	}
 	c.ApprovalsReviewer = normalizeApprovalsReviewer(c.ApprovalsReviewer)
 	if c.ApprovalsReviewer == "" {
 		return errors.New("--approvals-reviewer must be user or auto-review")
@@ -466,6 +475,28 @@ func (c *appConfig) validateConnectCommand(command string) error {
 	return nil
 }
 
+// resolveInstructions resolves the configurable system prompt. An inline value
+// (--instructions / ASSISTANT_INSTRUCTIONS / config "instructions") always wins;
+// otherwise a file path (--instructions-file / ASSISTANT_INSTRUCTIONS_FILE /
+// config "instructionsPath") is read from disk. When neither is set the runtime
+// falls back to the built-in default instructions.
+func (c *appConfig) resolveInstructions() error {
+	c.Instructions = strings.TrimSpace(c.Instructions)
+	if c.Instructions != "" {
+		return nil
+	}
+	path := expandUserPath(strings.TrimSpace(c.InstructionsPath))
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read instructions file %s: %w", path, err)
+	}
+	c.Instructions = strings.TrimSpace(string(data))
+	return nil
+}
+
 func (c *appConfig) loadFileConfig() error {
 	path := strings.TrimSpace(c.ConfigPath)
 	if path == "" {
@@ -483,6 +514,10 @@ func (c *appConfig) loadFileConfig() error {
 
 func (c *appConfig) applyFileConfig() {
 	fc := c.FileConfig
+	if strings.TrimSpace(c.Instructions) == "" && strings.TrimSpace(c.InstructionsPath) == "" {
+		c.Instructions = strings.TrimSpace(fc.Instructions)
+		c.InstructionsPath = strings.TrimSpace(fc.InstructionsPath)
+	}
 	c.MCPConfigPaths = append(c.MCPConfigPaths, expandPathList(fc.MCPConfigPaths)...)
 	if strings.TrimSpace(fc.Approvals.Reviewer) != "" && !c.ApprovalsReviewerFlagSet {
 		c.ApprovalsReviewer = fc.Approvals.Reviewer
@@ -544,6 +579,8 @@ providers:
 
 extension config:
   --config PATH             assistant JSON config; defaults to ~/.gratefulagents/assistant/config.json
+  --instructions TEXT       override the system prompt inline (also ASSISTANT_INSTRUCTIONS)
+  --instructions-file PATH  read the system prompt from a file (also ASSISTANT_INSTRUCTIONS_FILE)
   --mcp-config PATH         add an MCP config; repeat for any number of servers/bundles
   --skills                  expose SDK skill search/install/list tools
   --scheduling              expose schedule tools and run the background scheduler

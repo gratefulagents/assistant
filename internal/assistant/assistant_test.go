@@ -342,8 +342,15 @@ func TestPrimeMemoryEmptyWhenNothingStored(t *testing.T) {
 	if got := primeMemory(context.Background(), store); got != "" {
 		t.Fatalf("primeMemory with empty store = %q, want empty", got)
 	}
-	if instr := instructionsWithMemory(""); instr != defaultInstructions() {
+	if instr := instructionsWithMemory("", ""); instr != defaultInstructions() {
 		t.Fatal("instructionsWithMemory(empty) should equal defaultInstructions()")
+	}
+	const customPrompt = "You are Helga, a terse ops bot. Never use emoji."
+	if instr := instructionsWithMemory(customPrompt, ""); instr != customPrompt {
+		t.Fatalf("custom instructions should override default, got:\n%s", instr)
+	}
+	if instr := instructionsWithMemory(customPrompt, "remember: ping me at 9am"); !strings.Contains(instr, customPrompt) || !strings.Contains(instr, "ping me at 9am") || strings.Contains(instr, "lightweight personal AI assistant") {
+		t.Fatalf("custom instructions + prime should use override base, got:\n%s", instr)
 	}
 }
 
@@ -365,7 +372,7 @@ func TestPrimeMemoryInjectsStoredMemory(t *testing.T) {
 	if !strings.Contains(prime, "Allergic to shellfish.") {
 		t.Fatalf("primeMemory = %q, want it to contain the pinned memory", prime)
 	}
-	instr := instructionsWithMemory(prime)
+	instr := instructionsWithMemory("", prime)
 	if !strings.Contains(instr, "Allergic to shellfish.") || !strings.Contains(instr, "loaded for this run") {
 		t.Fatalf("instructionsWithMemory did not inject primed memory:\n%s", instr)
 	}
