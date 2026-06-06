@@ -260,7 +260,7 @@ func handleSlashCommand(text string, session *conversationSession, allowExit boo
 
 	switch command {
 	case "/start":
-		return slashCommandResult{Handled: true, Reply: slashCommandHelp()}
+		return slashCommandResult{Handled: true, Reply: startWelcome()}
 	case "/version":
 		return slashCommandResult{Handled: true, Reply: versionText()}
 	case "/exit", "/quit":
@@ -308,7 +308,7 @@ func setSessionModeCommand(session *conversationSession, mode string) slashComma
 func slashCommandHelp() string {
 	return strings.Join([]string{
 		"commands:",
-		"/start - show this help",
+		"/start - show welcome, capabilities, and example prompts",
 		"/help - show this help",
 		"/version - show assistant version and build information",
 		"/plan - switch this conversation to planning mode",
@@ -316,6 +316,32 @@ func slashCommandHelp() string {
 		"/mode <name> - set a custom mode label",
 		"/clear - clear this conversation's history",
 		"/stop - stop an active run when supported",
+	}, "\n")
+}
+
+// startWelcome is the reply to /start: a friendly introduction that summarizes
+// what the assistant can do, a few example prompts to get the user going, and
+// the list of available commands.
+func startWelcome() string {
+	return strings.Join([]string{
+		"👋 Hi! I'm Assistant, your personal AI assistant.",
+		"",
+		"Here are some things I can help with:",
+		"• Answering questions, researching, and summarizing",
+		"• Reading and drafting Gmail and managing your Google Calendar (once Google is connected)",
+		"• Remembering notes, tasks, and follow-ups for you",
+		"• Scheduling reminders and recurring tasks",
+		"• Recalling our past conversations",
+		"• Adding new integrations on request via skills",
+		"",
+		"Try asking me:",
+		`• "Summarize my unread emails from today"`,
+		`• "What's on my calendar tomorrow?"`,
+		`• "Remind me to call the dentist at 5pm"`,
+		`• "Draft a reply to the latest email from Alex"`,
+		`• "What did we decide about the budget last week?"`,
+		"",
+		slashCommandHelp(),
 	}, "\n")
 }
 

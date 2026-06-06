@@ -138,8 +138,20 @@ func TestSlashCommandsSupportTelegramMentionSuffix(t *testing.T) {
 
 func TestSlashStartShowsHelp(t *testing.T) {
 	got := handleSlashCommand("/start", newConversationSession(), false)
-	if !got.Handled || !strings.Contains(got.Reply, "/clear - clear this conversation's history") {
-		t.Fatalf("/start result = %#v, want help", got)
+	if !got.Handled {
+		t.Fatalf("/start result = %#v, want handled", got)
+	}
+	// /start surfaces the welcome: capabilities, example prompts, and the
+	// command list.
+	for _, want := range []string{
+		"personal AI assistant",
+		"Try asking me:",
+		"What's on my calendar tomorrow?",
+		"/clear - clear this conversation's history",
+	} {
+		if !strings.Contains(got.Reply, want) {
+			t.Fatalf("/start reply missing %q in %q", want, got.Reply)
+		}
 	}
 }
 
