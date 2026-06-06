@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const gmailAPIBase = "https://gmail.googleapis.com/gmail/v1/users/"
+var gmailAPIBase = "https://gmail.googleapis.com/gmail/v1/users/"
 
 type gmailSeenState struct {
 	Seen map[string]bool `json:"seen"`
@@ -28,19 +28,43 @@ type gmailMessageRef struct {
 }
 
 type gmailListResponse struct {
-	Messages []gmailMessageRef `json:"messages"`
+	Messages           []gmailMessageRef `json:"messages"`
+	NextPageToken      string            `json:"nextPageToken"`
+	ResultSizeEstimate int               `json:"resultSizeEstimate"`
+}
+
+type gmailHeaderField struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+type gmailMessageBody struct {
+	Data         string `json:"data"`
+	Size         int    `json:"size"`
+	AttachmentID string `json:"attachmentId"`
+}
+
+type gmailMessagePart struct {
+	PartID   string             `json:"partId"`
+	MIMEType string             `json:"mimeType"`
+	Filename string             `json:"filename"`
+	Headers  []gmailHeaderField `json:"headers"`
+	Body     gmailMessageBody   `json:"body"`
+	Parts    []gmailMessagePart `json:"parts"`
 }
 
 type gmailMessage struct {
-	ID       string `json:"id"`
-	ThreadID string `json:"threadId"`
-	Snippet  string `json:"snippet"`
-	Payload  struct {
-		Headers []struct {
-			Name  string `json:"name"`
-			Value string `json:"value"`
-		} `json:"headers"`
-	} `json:"payload"`
+	ID           string           `json:"id"`
+	ThreadID     string           `json:"threadId"`
+	LabelIDs     []string         `json:"labelIds"`
+	Snippet      string           `json:"snippet"`
+	InternalDate string           `json:"internalDate"`
+	Payload      gmailMessagePart `json:"payload"`
+}
+
+type gmailThread struct {
+	ID       string         `json:"id"`
+	Messages []gmailMessage `json:"messages"`
 }
 
 func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) error {

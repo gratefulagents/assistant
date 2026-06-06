@@ -105,11 +105,16 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 		appTools = append(appTools, memoryReviewTools(cfg)...)
 	}
 	if cfg.EnableTools && googleAuthConfigured(cfg) {
-		tools, err := googleCalendarTools(cfg)
+		calendarTools, err := googleCalendarTools(cfg)
 		if err != nil {
 			return extensionBundle{}, err
 		}
-		appTools = append(appTools, tools...)
+		appTools = append(appTools, calendarTools...)
+		gmailTools, err := googleGmailTools(cfg)
+		if err != nil {
+			return extensionBundle{}, err
+		}
+		appTools = append(appTools, gmailTools...)
 	}
 	if toolAccess(cfg.Permission) == agentsdk.ToolAccessLevelReadOnly {
 		appTools = markFilesystemExempt(appTools)
