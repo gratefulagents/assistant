@@ -115,6 +115,7 @@ func runMemoryReviewModel(ctx context.Context, cfg appConfig, turns []transcript
 	reviewCfg.EnableApproval = false
 	reviewCfg.EnableGuardrails = false
 	reviewCfg.EnableCompaction = false
+	reviewCfg.FeatureOverrides = assistantFeaturesConfig{}
 	reviewCfg.FileConfig = assistantConfigFile{}
 
 	bundle, err := buildBundle(reviewCtx, reviewCfg, stderr, nil)

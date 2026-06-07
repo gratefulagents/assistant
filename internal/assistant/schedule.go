@@ -121,8 +121,9 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 		fmt.Fprintf(stderr, "assistant schedule %s running\n", label)
 		reply, runErr := runScheduledPromptText(ctx, cfg, entry, stdout, stderr)
 		if runErr != nil {
-			_ = finishScheduleRun(cfg, entry.ID, "", runErr)
-			fmt.Fprintf(stderr, "assistant schedule %s failed: %v\n", label, runErr)
+			if finishErr := finishScheduleRun(cfg, entry.ID, "", runErr); finishErr != nil {
+				emitAuditError(cfg, stdout, "schedule", "finish", finishErr)
+			}
 			continue
 		}
 		deliveryErr := deliverScheduleOutput(ctx, cfg, entry, reply)
@@ -130,7 +131,7 @@ func runDueSchedules(ctx context.Context, cfg appConfig, stdout, stderr io.Write
 			return err
 		}
 		if deliveryErr != nil {
-			fmt.Fprintf(stderr, "assistant schedule %s delivery failed: %v\n", label, deliveryErr)
+			emitAuditError(cfg, stdout, "schedule", "delivery", deliveryErr)
 			continue
 		}
 		fmt.Fprintf(stdout, "\n[schedule %s]\n%s\n", label, reply)

@@ -359,9 +359,12 @@ func (c *langfuseClient) send(ctx context.Context, payload langfuseIngestion) er
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return fmt.Errorf("langfuse ingestion: read response: %w", err)
+	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("langfuse ingestion: %s", resp.Status)
+		return fmt.Errorf("langfuse ingestion: %s: %s", resp.Status, firstLine(string(body)))
 	}
 	// 207 Multi-Status carries per-event errors in an "errors" array even
 	// though the request itself succeeded; surface them so schema mistakes

@@ -21,6 +21,8 @@ type extensionBundle struct {
 	MemoryPrime string
 }
 
+const presentPlanToolName = "present_plan"
+
 func buildBundle(ctx context.Context, cfg appConfig, stderr io.Writer, audit *auditRecorder) (*sdkruntime.Bundle, error) {
 	extensions, err := loadExtensions(ctx, cfg)
 	if err != nil {
@@ -56,6 +58,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 	if activePhase == "" {
 		activePhase = "chat"
 	}
+	features := runtimeFeatures(cfg, extensions, audit)
 	rt := sdkruntime.Config{
 		Provider:                sdkProviderName(cfg.Provider),
 		Model:                   cfg.Model,
@@ -75,6 +78,7 @@ func runtimeConfig(cfg appConfig, extensions extensionBundle, audit *auditRecord
 		ToolTimeout:             cfg.ToolTimeout,
 		ToolAccess:              toolAccess(cfg.Permission),
 		PermissionMode:          sdkpolicy.NormalizePermissionMode(cfg.Permission),
+		Features:                &features,
 		EnableTools:             cfg.EnableTools,
 		EnableMCP:               cfg.EnableMCP,
 		EnableHandoffs:          false,
@@ -131,6 +135,27 @@ func closeBundle(bundle *sdkruntime.Bundle, stderr io.Writer) {
 			fmt.Fprintln(stderr, "[log] close warning:", err)
 		}
 	}
+}
+
+func dropToolByName(bundle *sdkruntime.Bundle, name string) {
+	if bundle == nil || strings.TrimSpace(name) == "" {
+		return
+	}
+	bundle.Tools = filterToolsByName(bundle.Tools, name)
+	if bundle.Agent != nil {
+		bundle.Agent.Tools = filterToolsByName(bundle.Agent.Tools, name)
+	}
+}
+
+func filterToolsByName(tools []agentsdk.Tool, name string) []agentsdk.Tool {
+	filtered := tools[:0]
+	for _, tool := range tools {
+		if tool == nil || tool.Name() == name {
+			continue
+		}
+		filtered = append(filtered, tool)
+	}
+	return filtered
 }
 
 func defaultInstructions() string {

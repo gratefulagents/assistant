@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -115,7 +116,11 @@ func runPromptTextWithSessionApprovalMeta(ctx context.Context, cfg appConfig, pr
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = audit.Close() }()
+	defer func() {
+		if closeErr := audit.Close(); closeErr != nil {
+			log.Printf("[audit] close error: %v", closeErr)
+		}
+	}()
 	audit.EmitRunStart(cfg, prompt)
 
 	store, overMsg := checkAndStartUsage(cfg)
@@ -325,7 +330,10 @@ func postJSON(ctx context.Context, url, bearer string, payload any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return fmt.Errorf("POST %s: %s: read error body: %w", redactedEndpoint(url), resp.Status, readErr)
+		}
 		return fmt.Errorf("POST %s: %s: %s", redactedEndpoint(url), resp.Status, string(data))
 	}
 	return nil

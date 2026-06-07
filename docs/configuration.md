@@ -282,6 +282,19 @@ extensions.
     "reviewerModel": "",
     "reviewerTimeout": 90
   },
+  "features": {
+    "defaults": true,
+    "tools": {
+      "webFetch": false,
+      "signals": {
+        "presentPlan": false
+      }
+    },
+    "runtime": {
+      "parallelToolCalls": true,
+      "untrustedToolOutputs": true
+    }
+  },
   "plugins": [
     {
       "name": "home-automation",
@@ -305,6 +318,49 @@ The `approvals` block is optional. `reviewer` accepts `user` or
 `auto-review` (`auto`, `guardian`, and `guardian_subagent` are accepted aliases).
 `reviewerModel` lets the approval reviewer use a different model from the main
 assistant, and `reviewerTimeout` controls the reviewer timeout in seconds.
+
+The `features` block is optional and maps to the SDK runtime feature gates.
+Unset fields keep Assistant's defaults. Set `"defaults": false` to start from an
+all-off SDK runtime surface and enable only the features listed in the block.
+
+Configurable groups:
+
+- `tools`: `listFiles`, `readFile`, `glob`, `grep`, `lsp`, `bash`, `write`,
+  `edit`, `webFetch`, `asyncShell`, `extraTools`, `visionAnalyzer`, and
+  `signals`.
+- `tools.signals`: `askUserQuestion`, `presentPlan`, `finish`, `setPhase`.
+- `mcp`: `enabled`, `allowAllServers`, `allowedServers`, `allowAllTools`,
+  `allowedTools`, `resourceTools`.
+- `handoffs`: `enabled`, `genericFallback`.
+- `subAgents`: `syncTools`, `genericFallback`, and `async`.
+- `subAgents.async`: `spawn`, `run`, `graph`, `list`, `status`, `activity`,
+  `taskGraph`, `message`, `collect`, `cancel`.
+- `guardrails`: `builtin`.
+- `modes`: `instructions`, `phaseTracking`, `modelRouting`.
+- `projectState`: `primeContext`, `taskTools`, `memoryTools`, `primeTool`.
+- `runtime`: `compaction`, `approval`, `retry`, `forceFinalSummary`,
+  `eventStream`, `tracing`, `immediateInputPolling`, `handoffHistory`,
+  `parallelToolCalls`, `untrustedToolOutputs`.
+
+Example all-off SDK surface with only file read, final signaling, and retry:
+
+```json
+{
+  "features": {
+    "defaults": false,
+    "tools": {
+      "readFile": true,
+      "signals": {
+        "finish": true
+      }
+    },
+    "runtime": {
+      "retry": true,
+      "untrustedToolOutputs": true
+    }
+  }
+}
+```
 
 ## Skills
 
@@ -356,6 +412,7 @@ ASSISTANT_TELEGRAM_BOT_TOKEN       required for `assistant telegram`
 ASSISTANT_TELEGRAM_ALLOWED_USERS   comma-separated allowed user IDs/usernames
 ASSISTANT_TELEGRAM_ALLOWED_CHATS   comma-separated allowed chat IDs
 ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
+ASSISTANT_TELEGRAM_ERROR_DETAILS   optional; defaults to false
 ```
 
 Create the bot with

@@ -404,7 +404,10 @@ func downloadToWriterLimited(ctx context.Context, client *http.Client, url strin
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return fmt.Errorf("GET %s: %s: read error body: %w", url, resp.Status, readErr)
+		}
 		return fmt.Errorf("GET %s: %s: %s", url, resp.Status, firstLine(string(data)))
 	}
 	reader := resp.Body

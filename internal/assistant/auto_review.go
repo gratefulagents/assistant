@@ -135,6 +135,7 @@ func runApprovalAutoReview(ctx context.Context, cfg appConfig, pending *agentsdk
 	reviewCfg.EnableApproval = false
 	reviewCfg.EnableGuardrails = false
 	reviewCfg.EnableCompaction = false
+	reviewCfg.FeatureOverrides = assistantFeaturesConfig{}
 	reviewCfg.FileConfig = assistantConfigFile{}
 
 	bundle, err := buildBundle(reviewCtx, reviewCfg, stderr, nil)

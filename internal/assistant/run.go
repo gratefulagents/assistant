@@ -91,6 +91,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 	}
 	if err != nil {
+		emitAuditError(cfg, stdout, "assistant", "runtime", err)
 		fmt.Fprintln(stderr, "assistant:", err)
 		return 1
 	}

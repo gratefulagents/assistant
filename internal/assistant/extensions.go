@@ -24,6 +24,7 @@ type assistantConfigFile struct {
 	MCPConfigPaths   stringListFlag                 `json:"mcpConfigPaths,omitempty"`
 	Skills           skillsConfig                   `json:"skills,omitempty"`
 	Approvals        approvalsConfig                `json:"approvals,omitempty"`
+	Features         assistantFeaturesConfig        `json:"features,omitempty"`
 	Plugins          []pluginConfig                 `json:"plugins,omitempty"`
 	Extensions       []pluginConfig                 `json:"extensions,omitempty"`
 }

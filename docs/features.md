@@ -331,6 +331,7 @@ Useful flags:
 --telegram-allowed-user    Telegram user ID or username allowed to use the bot
 --telegram-allowed-chat    Telegram chat ID allowed to use the bot
 --telegram-poll-timeout    Telegram long-poll timeout in seconds
+--telegram-error-details   Send raw run error details to Telegram on failure
 ```
 
 Equivalent environment variables:
@@ -340,6 +341,7 @@ ASSISTANT_TELEGRAM_BOT_TOKEN       required unless --telegram-bot-token is set
 ASSISTANT_TELEGRAM_ALLOWED_USERS   comma-separated allowed user IDs/usernames
 ASSISTANT_TELEGRAM_ALLOWED_CHATS   comma-separated allowed chat IDs
 ASSISTANT_TELEGRAM_POLL_TIMEOUT    optional; defaults to 50 seconds
+ASSISTANT_TELEGRAM_ERROR_DETAILS   optional; defaults to false
 ```
 
 Telegram access is deny-by-default. At least one allowed user or chat must be
@@ -348,6 +350,12 @@ Telegram user IDs over usernames. If you need to discover the IDs, start the
 poller, send the bot one message, read the `telegram access denied` line from
 the process logs, then set the matching user or chat ID and restart.
 Messages outside the allowlist are ignored without a Telegram reply.
+
+Run failures are reported to Telegram with a generic message by default, while
+the real model/tool error is recorded by audit logging when `--audit` is
+enabled. Set
+`--telegram-error-details` or `ASSISTANT_TELEGRAM_ERROR_DETAILS=true` only when
+you want raw failure details sent into the chat for debugging.
 
 Telegram replies are sent with Bot API HTML formatting enabled. Assistant may
 use Telegram-supported rich text such as bold, italic, underline,

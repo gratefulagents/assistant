@@ -138,6 +138,34 @@ func (a *auditRecorder) EmitRunError(err error) {
 	a.emit("run_error", map[string]any{"error": err.Error()})
 }
 
+func (a *auditRecorder) EmitOperationalError(component, stage string, err error) {
+	if a == nil || err == nil {
+		return
+	}
+	a.emit("operational_error", map[string]any{
+		"component": strings.TrimSpace(component),
+		"stage":     strings.TrimSpace(stage),
+		"error":     err.Error(),
+	})
+}
+
+func emitAuditError(cfg appConfig, stdout io.Writer, component, stage string, err error) {
+	if err == nil || !cfg.Audit {
+		return
+	}
+	audit, auditErr := newAuditRecorder(cfg, stdout)
+	if auditErr != nil {
+		log.Printf("[audit] operational_error component=%q stage=%q error=%q audit_error=%q", component, stage, err.Error(), auditErr.Error())
+		return
+	}
+	defer func() {
+		if closeErr := audit.Close(); closeErr != nil {
+			log.Printf("[audit] close error: %v", closeErr)
+		}
+	}()
+	audit.EmitOperationalError(component, stage, err)
+}
+
 func (a *auditRecorder) EmitApprovalRequest(pending *agentsdk.Interruption) {
 	if a == nil || pending == nil {
 		return
@@ -340,12 +368,17 @@ func (a *auditRecorder) emit(event string, fields map[string]any) {
 	fields["event"] = event
 	data, err := json.Marshal(fields)
 	if err != nil {
-		data, _ = json.Marshal(map[string]any{
+		fallback := map[string]any{
 			"time":   time.Now().UTC().Format(time.RFC3339Nano),
 			"run_id": a.runID,
 			"event":  "audit_error",
 			"error":  err.Error(),
-		})
+		}
+		data, err = json.Marshal(fallback)
+		if err != nil {
+			log.Printf("[audit] marshal error: %v", err)
+			return
+		}
 	}
 	data = []byte(redactAuditText(string(data)))
 
@@ -356,7 +389,9 @@ func (a *auditRecorder) emit(event string, fields map[string]any) {
 	}
 	log.Printf("[audit] %s", data)
 	if a.file != nil {
-		_, _ = a.file.Write(append(data, '\n'))
+		if _, err := a.file.Write(append(data, '\n')); err != nil {
+			log.Printf("[audit] write error: %v", err)
+		}
 	}
 }
 
@@ -368,7 +403,7 @@ func (a *auditRecorder) shouldEmit(event string) bool {
 		return true
 	}
 	switch event {
-	case "assistant_message", "tool_call", "tool_error", "run_error", "audit_error":
+	case "assistant_message", "tool_call", "tool_error", "run_error", "operational_error", "audit_error":
 		return true
 	default:
 		return false

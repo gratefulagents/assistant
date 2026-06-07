@@ -20,6 +20,19 @@
     "reviewerModel": "",
     "reviewerTimeout": 90
   },
+  "features": {
+    "defaults": true,
+    "tools": {
+      "webFetch": false,
+      "signals": {
+        "presentPlan": false
+      }
+    },
+    "runtime": {
+      "parallelToolCalls": true,
+      "untrustedToolOutputs": true
+    }
+  },
   "plugins": [
     {
       "name": "home-automation",

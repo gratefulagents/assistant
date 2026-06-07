@@ -95,6 +95,7 @@ type appConfig struct {
 	TelegramAllowedUsers        stringListFlag
 	TelegramAllowedChats        stringListFlag
 	TelegramPollTimeout         int
+	TelegramErrorDetails        bool
 	GmailToken                  string
 	GmailUser                   string
 	GmailQuery                  string
@@ -108,6 +109,7 @@ type appConfig struct {
 	Prompt                      string
 	Instructions                string
 	InstructionsPath            string
+	FeatureOverrides            assistantFeaturesConfig
 	FileConfig                  assistantConfigFile
 }
 
@@ -173,6 +175,7 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.Var(&cfg.TelegramAllowedUsers, "telegram-allowed-user", "Telegram user ID or username allowed to use the bot; repeat or comma-separate")
 	fs.Var(&cfg.TelegramAllowedChats, "telegram-allowed-chat", "Telegram chat ID allowed to use the bot; repeat or comma-separate")
 	fs.IntVar(&cfg.TelegramPollTimeout, "telegram-poll-timeout", cfg.TelegramPollTimeout, "Telegram long-poll timeout in seconds")
+	fs.BoolVar(&cfg.TelegramErrorDetails, "telegram-error-details", cfg.TelegramErrorDetails, "include raw run error details in Telegram failure replies")
 	fs.StringVar(&cfg.GmailToken, "gmail-token", cfg.GmailToken, "Gmail OAuth access token for polling")
 	fs.StringVar(&cfg.GmailUser, "gmail-user", cfg.GmailUser, "Gmail user id; usually me")
 	fs.StringVar(&cfg.GmailQuery, "gmail-query", cfg.GmailQuery, "Gmail search query for polling")
@@ -271,6 +274,7 @@ func defaultConfig() appConfig {
 		TelegramAllowedUsers:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),
 		TelegramAllowedChats:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_CHATS")),
 		TelegramPollTimeout:       envInt("ASSISTANT_TELEGRAM_POLL_TIMEOUT", 50),
+		TelegramErrorDetails:      envBool("ASSISTANT_TELEGRAM_ERROR_DETAILS", false),
 		GmailToken:                firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_ACCESS_TOKEN"), os.Getenv("ASSISTANT_GMAIL_TOKEN")),
 		GmailUser:                 firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_USER"), "me"),
 		GmailQuery:                firstNonEmpty(os.Getenv("ASSISTANT_GMAIL_QUERY"), "is:unread"),
@@ -534,6 +538,7 @@ func (c *appConfig) applyFileConfig() {
 	if fc.Skills.Enabled != nil {
 		c.EnableSkills = *fc.Skills.Enabled
 	}
+	c.FeatureOverrides = fc.Features
 	for _, extension := range fc.Extensions {
 		if !extension.enabled() {
 			continue

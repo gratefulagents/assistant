@@ -133,7 +133,10 @@ Telegram polling uses outbound requests only, so no public webhook or inbound
 port is required. Telegram access is deny-by-default: set
 `ASSISTANT_TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID, or
 `ASSISTANT_TELEGRAM_ALLOWED_CHATS` to a specific chat ID. Messages outside the
-allowlist are ignored before an assistant run starts.
+allowlist are ignored before an assistant run starts. Run failures send a
+generic Telegram reply by default; set `--telegram-error-details` or
+`ASSISTANT_TELEGRAM_ERROR_DETAILS=true` only when you want raw error details in
+the chat for debugging.
 
 Interactive OAuth mode:
 

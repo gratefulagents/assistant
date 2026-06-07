@@ -186,6 +186,24 @@ func TestOpenAIOAuthRefreshFlagOverridesEnv(t *testing.T) {
 	}
 }
 
+func TestTelegramErrorDetailsFlagOverridesEnv(t *testing.T) {
+	t.Setenv("ASSISTANT_TELEGRAM_ERROR_DETAILS", "true")
+	cfg, err := parseConfig(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.TelegramErrorDetails {
+		t.Fatal("TelegramErrorDetails = false, want true from env")
+	}
+	cfg, err = parseConfig([]string{"--telegram-error-details=false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.TelegramErrorDetails {
+		t.Fatal("TelegramErrorDetails = true, want false from flag override")
+	}
+}
+
 func TestRuntimeConfigCanDisableOpenAIOAuthRefresh(t *testing.T) {
 	authPath := filepath.Join(t.TempDir(), "auth.json")
 	if err := os.WriteFile(authPath, []byte(`{"tokens":{"access_token":"old-access","refresh_token":"old-refresh","account_id":"acct-1"},"last_refresh":"2000-01-01T00:00:00Z"}`), 0o600); err != nil {
@@ -458,6 +476,7 @@ func TestLowAuditLevelKeepsOnlyToolInputsAssistantTextAndErrors(t *testing.T) {
 		},
 	})
 	audit.EmitRunError(errors.New("run failed"))
+	audit.EmitOperationalError("telegram", "poll", errors.New("poll failed"))
 	audit.EmitApprovalDecision("Read", json.RawMessage(`{"file":"README.md"}`), true)
 	audit.EmitRunEnd(&agentsdk.RunResult{})
 	if err := audit.Close(); err != nil {
@@ -475,6 +494,10 @@ func TestLowAuditLevelKeepsOnlyToolInputsAssistantTextAndErrors(t *testing.T) {
 		`"content":"failed"`,
 		`"event":"run_error"`,
 		`"error":"run failed"`,
+		`"event":"operational_error"`,
+		`"component":"telegram"`,
+		`"stage":"poll"`,
+		`"error":"poll failed"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("low audit stdout missing %s in %q", want, out)
@@ -491,6 +514,34 @@ func TestLowAuditLevelKeepsOnlyToolInputsAssistantTextAndErrors(t *testing.T) {
 		if strings.Contains(out, forbidden) {
 			t.Fatalf("low audit stdout included %s in %q", forbidden, out)
 		}
+	}
+}
+
+func TestEmitAuditErrorWritesOperationalError(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Audit = true
+	cfg.AuditLogPath = filepath.Join(t.TempDir(), "audit.ndjson")
+
+	var stdout strings.Builder
+	emitAuditError(cfg, &stdout, "telegram", "reply", errors.New("send failed"))
+
+	out := stdout.String()
+	for _, want := range []string{
+		`"event":"operational_error"`,
+		`"component":"telegram"`,
+		`"stage":"reply"`,
+		`"error":"send failed"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("operational audit stdout missing %s in %q", want, out)
+		}
+	}
+	data, err := os.ReadFile(cfg.AuditLogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if text := string(data); !strings.Contains(text, `"event":"operational_error"`) {
+		t.Fatalf("audit file missing operational error: %q", text)
 	}
 }
 
@@ -531,6 +582,149 @@ func TestDurableMemoryToolsAreModelDriven(t *testing.T) {
 	}
 	if !strings.Contains(defaultInstructions(), "Durable memory is model-driven") {
 		t.Fatal("default instructions do not state model-driven memory policy")
+	}
+}
+
+func TestRuntimeConfigUsesExplicitSDKFeatures(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.EnableTools = true
+	cfg.EnableMCP = true
+	cfg.EnableApproval = true
+	cfg.EnableCompaction = true
+	cfg.EnableGuardrails = true
+	extensions := extensionBundle{
+		MCPConfig: &sdkmcp.Config{MCPServers: map[string]sdkmcp.ServerConfig{
+			"files": {Type: "stdio", Command: "files-mcp"},
+		}},
+		ExtraTools: []agentsdk.Tool{fakeWriteTool{name: "host_tool"}},
+	}
+	rt, err := runtimeConfig(cfg, extensions, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Features == nil {
+		t.Fatal("runtime Features = nil, want explicit SDK features")
+	}
+	features := *rt.Features
+	for name, enabled := range map[string]bool{
+		"listFiles":        features.Tools.ListFiles,
+		"readFile":         features.Tools.ReadFile,
+		"grep":             features.Tools.Grep,
+		"bash":             features.Tools.Bash,
+		"write":            features.Tools.Write,
+		"webFetch":         features.Tools.WebFetch,
+		"extraTools":       features.Tools.ExtraTools,
+		"finish":           features.Tools.Signals.Finish,
+		"mcp":              features.MCP.Enabled,
+		"mcpAllServers":    features.MCP.AllowAllServers,
+		"mcpAllTools":      features.MCP.AllowAllTools,
+		"guardrails":       features.Guardrails.Builtin,
+		"modeInstructions": features.Modes.Instructions,
+		"phaseTracking":    features.Modes.PhaseTracking,
+		"compaction":       features.Runtime.Compaction,
+		"approval":         features.Runtime.Approval,
+		"retry":            features.Runtime.Retry,
+		"parallelTools":    features.Runtime.ParallelToolCalls,
+		"untrustedOutput":  features.Runtime.UntrustedToolOutputs,
+	} {
+		if !enabled {
+			t.Fatalf("feature %s = false, want true", name)
+		}
+	}
+	if features.ProjectState.TaskTools || features.ProjectState.MemoryTools || features.ProjectState.PrimeContext {
+		t.Fatalf("SDK project state features = %+v, want off because assistant exposes memory as host ExtraTools", features.ProjectState)
+	}
+	if features.SubAgents.SyncTools || features.SubAgents.Async.Spawn || features.Handoffs.Enabled {
+		t.Fatalf("sub-agent/handoff features unexpectedly enabled: subagents=%+v handoffs=%+v", features.SubAgents, features.Handoffs)
+	}
+}
+
+func TestRuntimeFeatureOverridesCanDisableDefaults(t *testing.T) {
+	off := false
+	on := true
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.EnableTools = true
+	cfg.EnableApproval = true
+	cfg.FeatureOverrides = assistantFeaturesConfig{
+		Tools: &assistantToolFeatures{
+			Bash:     &off,
+			Write:    &off,
+			WebFetch: &off,
+			Signals: &assistantSignalFeatures{
+				PresentPlan: &off,
+			},
+		},
+		MCP: &assistantMCPFeatures{
+			Enabled:         &on,
+			AllowAllServers: &off,
+			AllowedServers:  []string{"files"},
+			AllowAllTools:   &off,
+			AllowedTools:    []string{"read"},
+		},
+		Runtime: &assistantRuntimeFeatures{
+			Approval:             &off,
+			ParallelToolCalls:    &off,
+			UntrustedToolOutputs: &off,
+		},
+	}
+	rt, err := runtimeConfig(cfg, extensionBundle{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	features := *rt.Features
+	if features.Tools.Bash || features.Tools.Write || features.Tools.WebFetch || features.Tools.Signals.PresentPlan {
+		t.Fatalf("disabled tool features still enabled: %+v", features.Tools)
+	}
+	if !features.Tools.ReadFile || !features.Tools.Grep {
+		t.Fatalf("unspecified default tool features were not preserved: %+v", features.Tools)
+	}
+	if !features.MCP.Enabled || features.MCP.AllowAllServers || features.MCP.AllowAllTools {
+		t.Fatalf("MCP overrides not applied: %+v", features.MCP)
+	}
+	if len(features.MCP.AllowedServers) != 1 || features.MCP.AllowedServers[0] != "files" {
+		t.Fatalf("AllowedServers = %#v", features.MCP.AllowedServers)
+	}
+	if len(features.MCP.AllowedTools) != 1 || features.MCP.AllowedTools[0] != "read" {
+		t.Fatalf("AllowedTools = %#v", features.MCP.AllowedTools)
+	}
+	if features.Runtime.Approval || features.Runtime.ParallelToolCalls || features.Runtime.UntrustedToolOutputs {
+		t.Fatalf("runtime disables not applied: %+v", features.Runtime)
+	}
+}
+
+func TestRuntimeFeatureOverridesCanStartAllOff(t *testing.T) {
+	off := false
+	on := true
+	cfg := defaultConfig()
+	cfg.ConfigPath = ""
+	cfg.EnableTools = true
+	cfg.EnableApproval = true
+	cfg.EnableCompaction = true
+	cfg.FeatureOverrides = assistantFeaturesConfig{
+		Defaults: &off,
+		Tools: &assistantToolFeatures{
+			ReadFile: &on,
+			Signals: &assistantSignalFeatures{
+				Finish: &on,
+			},
+		},
+		Runtime: &assistantRuntimeFeatures{
+			Retry:                &on,
+			UntrustedToolOutputs: &on,
+		},
+	}
+	rt, err := runtimeConfig(cfg, extensionBundle{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	features := *rt.Features
+	if !features.Tools.ReadFile || !features.Tools.Signals.Finish || !features.Runtime.Retry || !features.Runtime.UntrustedToolOutputs {
+		t.Fatalf("selected all-off overrides not enabled: %+v", features)
+	}
+	if features.Tools.ListFiles || features.Tools.Bash || features.Tools.Write || features.Runtime.Approval || features.Runtime.Compaction || features.Modes.Instructions {
+		t.Fatalf("all-off base left defaults enabled: %+v", features)
 	}
 }
 
@@ -804,6 +998,31 @@ func TestTelegramBotCommandsIncludeChatControls(t *testing.T) {
 		if !strings.Contains(string(data), want) {
 			t.Fatalf("telegram bot commands missing %q in %s", want, data)
 		}
+	}
+}
+
+func TestTelegramRunFailureReplyDefaultsToGeneric(t *testing.T) {
+	err := errors.New("provider returned secret failure detail\nsecond line")
+	got := telegramRunFailureReply(appConfig{}, err)
+	if got != telegramGenericFailureReply {
+		t.Fatalf("telegramRunFailureReply = %q, want generic reply", got)
+	}
+	for _, leaked := range []string{"provider", "secret", "second line"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("generic Telegram failure reply leaked %q in %q", leaked, got)
+		}
+	}
+}
+
+func TestTelegramRunFailureReplyCanExposeDetails(t *testing.T) {
+	err := errors.New("provider returned failure detail\nsecond line")
+	got := telegramRunFailureReply(appConfig{TelegramErrorDetails: true}, err)
+	want := "Run failed: provider returned failure detail"
+	if got != want {
+		t.Fatalf("telegramRunFailureReply = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "second line") {
+		t.Fatalf("telegramRunFailureReply included more than first line: %q", got)
 	}
 }
 

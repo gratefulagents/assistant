@@ -87,7 +87,7 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 			if errors.Is(err, errGoogleReconnect) {
 				return err
 			}
-			fmt.Fprintf(stderr, "gmail token warning: %v\n", err)
+			emitAuditError(cfg, stdout, "gmail", "token", err)
 			if !sleepContext(ctx, time.Duration(cfg.GmailPollInterval)*time.Second) {
 				return nil
 			}
@@ -97,7 +97,7 @@ func runGmailPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Writer
 			if ctx.Err() != nil {
 				return nil
 			}
-			fmt.Fprintf(stderr, "gmail poll warning: %v\n", err)
+			emitAuditError(cfg, stdout, "gmail", "poll", err)
 		}
 		if !sleepContext(ctx, time.Duration(cfg.GmailPollInterval)*time.Second) {
 			return nil
@@ -136,7 +136,7 @@ func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmai
 		}
 		msg, err := fetchGmailMessage(ctx, cfg, token, ref.ID)
 		if err != nil {
-			fmt.Fprintf(stderr, "gmail message warning: %v\n", err)
+			emitAuditError(cfg, stdout, "gmail", "message", err)
 			continue
 		}
 		reply, err := replyToInbound(ctx, cfg, inboundMessage{
@@ -146,17 +146,17 @@ func pollGmailOnce(ctx context.Context, cfg appConfig, token string, state *gmai
 			Text:    gmailInboundText(msg),
 		}, stdout, stderr, conversations)
 		if err != nil {
-			fmt.Fprintf(stderr, "gmail assistant warning for %s: %v\n", ref.ID, err)
+			// replyToInbound records model/tool failures in the run audit.
 		} else if cfg.GmailSendReplies {
 			if err := sendGmailReply(ctx, cfg, token, msg, reply); err != nil {
-				fmt.Fprintf(stderr, "gmail send warning for %s: %v\n", ref.ID, err)
+				emitAuditError(cfg, stdout, "gmail", "send", err)
 			}
 		} else if strings.TrimSpace(reply) != "" {
 			fmt.Fprintf(stdout, "gmail %s reply:\n%s\n", ref.ID, reply)
 		}
 		if cfg.GmailMarkRead {
 			if err := markGmailRead(ctx, cfg, token, ref.ID); err != nil {
-				fmt.Fprintf(stderr, "gmail mark-read warning for %s: %v\n", ref.ID, err)
+				emitAuditError(cfg, stdout, "gmail", "mark-read", err)
 			}
 		}
 		state.Seen[ref.ID] = true

@@ -28,6 +28,7 @@ const telegramFileAPIBase = "https://api.telegram.org/file/bot"
 const telegramMessageChunkRunes = 3800
 const telegramMaxImageBytes = 12 << 20
 const telegramMaxInboundImages = 8
+const telegramGenericFailureReply = "Sorry, I couldn't finish that request. Please try again in a moment."
 
 // Base URLs are vars so tests can point them at a stub server and so
 // --telegram-api-base can redirect the bot/file APIs at an ingress proxy.
@@ -142,7 +143,7 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 		return err
 	}
 	if err := telegramConfigureBot(ctx, token); err != nil {
-		fmt.Fprintf(stderr, "telegram menu warning: %v\n", err)
+		auditTelegramError(cfg, stdout, "menu", err)
 	}
 	if len(cfg.TelegramAllowedUsers) == 0 && len(cfg.TelegramAllowedChats) == 0 {
 		fmt.Fprintf(stderr, "telegram access allowlist is empty; incoming messages will be ignored\n")
@@ -157,7 +158,7 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 			if ctx.Err() != nil {
 				return nil
 			}
-			fmt.Fprintf(stderr, "telegram poll warning: %v\n", err)
+			auditTelegramError(cfg, stdout, "poll", err)
 			if !sleepContext(ctx, 5*time.Second) {
 				return nil
 			}
@@ -170,7 +171,7 @@ func runTelegramPoller(ctx context.Context, cfg appConfig, stdout, stderr io.Wri
 			}
 			offset = nextOffset
 			if err := handleTelegramUpdate(ctx, cfg, stdout, stderr, token, update, conversations); err != nil {
-				fmt.Fprintf(stderr, "telegram message warning: %v\n", err)
+				auditTelegramError(cfg, stdout, "message", err)
 			}
 			if err := saveTelegramOffset(cfg, offset); err != nil {
 				return err
@@ -370,7 +371,10 @@ func telegramDownloadFile(ctx context.Context, token, filePath string) ([]byte, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		preview, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		preview, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if readErr != nil {
+			return nil, fmt.Errorf("telegram file download: %s: read error body: %w", resp.Status, readErr)
+		}
 		return nil, fmt.Errorf("telegram file download: %s: %s", resp.Status, firstLine(string(preview)))
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, telegramMaxImageBytes+1))
@@ -449,7 +453,7 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 	}
 	session := conversations.sessionFor(msg)
 	if approvalID, approved, ok := telegramApprovalCallback(query.Data); ok {
-		return handleTelegramApprovalCallback(ctx, token, chatID, query, session, approvalID, approved)
+		return handleTelegramApprovalCallback(ctx, cfg, stdout, token, chatID, query, session, approvalID, approved)
 	}
 	if session.isRunning() {
 		return answerTelegramCallbackQuery(ctx, token, query.ID, "Still working on the previous message")
@@ -465,7 +469,9 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 		Text:    command,
 	}, stdout, stderr, conversations)
 	if err != nil {
-		_ = answerTelegramCallbackQuery(ctx, token, query.ID, "Action failed")
+		if answerErr := answerTelegramCallbackQuery(ctx, token, query.ID, "Action failed"); answerErr != nil {
+			auditTelegramError(cfg, stdout, "callback", answerErr)
+		}
 		return err
 	}
 	if err := answerTelegramCallbackQuery(ctx, token, query.ID, telegramCallbackNotice(command, reply)); err != nil {
@@ -477,13 +483,13 @@ func handleTelegramCallbackQuery(ctx context.Context, cfg appConfig, stdout, std
 func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Writer, token string, chatID int64, msg inboundMessage, media telegramMessage, session *conversationSession) {
 	defer session.finishRun()
 	doneTyping := make(chan struct{})
-	go telegramTypingLoop(ctx, token, chatID, doneTyping)
+	go telegramTypingLoop(ctx, cfg, stdout, token, chatID, doneTyping)
 	defer close(doneTyping)
 
 	if len(media.Photo) > 0 || media.Document != nil {
 		images, err := downloadTelegramImages(ctx, token, media)
 		if err != nil {
-			fmt.Fprintf(stderr, "telegram image warning: %v\n", err)
+			auditTelegramError(cfg, stdout, "image", err)
 		}
 		msg.Images = images
 	}
@@ -491,9 +497,8 @@ func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Wr
 	approval := telegramApprovalRequester{token: token, chatID: chatID, session: session}
 	reply, err := runPromptTextWithSessionApprovalImages(ctx, cfg, inboundPrompt(msg, msg.Text), msg.Images, stdout, stderr, session, approval)
 	if err != nil {
-		fmt.Fprintf(stderr, "telegram run warning: %v\n", err)
-		if postErr := postTelegramMessage(ctx, token, chatID, "Run failed: "+firstLine(err.Error())); postErr != nil {
-			fmt.Fprintf(stderr, "telegram reply warning: %v\n", postErr)
+		if postErr := postTelegramMessage(ctx, token, chatID, telegramRunFailureReply(cfg, err)); postErr != nil {
+			auditTelegramError(cfg, stdout, "reply", postErr)
 		}
 		return
 	}
@@ -501,8 +506,22 @@ func runTelegramMessage(ctx context.Context, cfg appConfig, stdout, stderr io.Wr
 		reply = "Done."
 	}
 	if err := postTelegramMessage(ctx, token, chatID, reply); err != nil {
-		fmt.Fprintf(stderr, "telegram reply warning: %v\n", err)
+		auditTelegramError(cfg, stdout, "reply", err)
 	}
+}
+
+func telegramRunFailureReply(cfg appConfig, err error) string {
+	if cfg.TelegramErrorDetails && err != nil {
+		if line := firstLine(err.Error()); line != "" {
+			return "Run failed: " + line
+		}
+		return "Run failed."
+	}
+	return telegramGenericFailureReply
+}
+
+func auditTelegramError(cfg appConfig, stdout io.Writer, stage string, err error) {
+	emitAuditError(cfg, stdout, "telegram", stage, err)
 }
 
 type telegramApprovalRequester struct {
@@ -554,7 +573,7 @@ func handleTelegramApprovalText(ctx context.Context, token string, chatID int64,
 	return true, postTelegramMessage(ctx, token, chatID, telegramApprovalDecisionNotice(approval, approved))
 }
 
-func handleTelegramApprovalCallback(ctx context.Context, token string, chatID int64, query telegramCallbackQuery, session *conversationSession, approvalID string, approved bool) error {
+func handleTelegramApprovalCallback(ctx context.Context, cfg appConfig, stdout io.Writer, token string, chatID int64, query telegramCallbackQuery, session *conversationSession, approvalID string, approved bool) error {
 	decision := approvalDecision{
 		Approved: approved,
 		Reason:   telegramApprovalDecisionReason(approved),
@@ -562,12 +581,16 @@ func handleTelegramApprovalCallback(ctx context.Context, token string, chatID in
 	approval, ok := session.decideApproval(approvalID, decision)
 	if !ok {
 		if query.Message.MessageID != 0 {
-			_ = editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID)
+			if err := editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID); err != nil {
+				auditTelegramError(cfg, stdout, "approval-markup", err)
+			}
 		}
 		return answerTelegramCallbackQuery(ctx, token, query.ID, "Approval is no longer pending")
 	}
 	if query.Message.MessageID != 0 {
-		_ = editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID)
+		if err := editTelegramMessageReplyMarkup(ctx, token, chatID, query.Message.MessageID); err != nil {
+			auditTelegramError(cfg, stdout, "approval-markup", err)
+		}
 	}
 	notice := telegramApprovalDecisionNotice(approval, approved)
 	if err := answerTelegramCallbackQuery(ctx, token, query.ID, notice); err != nil {
@@ -758,8 +781,10 @@ func sendTelegramChatAction(ctx context.Context, token string, chatID int64, act
 	})
 }
 
-func telegramTypingLoop(ctx context.Context, token string, chatID int64, done <-chan struct{}) {
-	_ = sendTelegramChatAction(ctx, token, chatID, "typing")
+func telegramTypingLoop(ctx context.Context, cfg appConfig, stdout io.Writer, token string, chatID int64, done <-chan struct{}) {
+	if err := sendTelegramChatAction(ctx, token, chatID, "typing"); err != nil {
+		auditTelegramError(cfg, stdout, "typing", err)
+	}
 	ticker := time.NewTicker(4 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -769,7 +794,9 @@ func telegramTypingLoop(ctx context.Context, token string, chatID int64, done <-
 		case <-done:
 			return
 		case <-ticker.C:
-			_ = sendTelegramChatAction(ctx, token, chatID, "typing")
+			if err := sendTelegramChatAction(ctx, token, chatID, "typing"); err != nil {
+				auditTelegramError(cfg, stdout, "typing", err)
+			}
 		}
 	}
 }
