@@ -150,7 +150,11 @@ func (a *auditRecorder) EmitOperationalError(component, stage string, err error)
 }
 
 func emitAuditError(cfg appConfig, stdout io.Writer, component, stage string, err error) {
-	if err == nil || !cfg.Audit {
+	if err == nil {
+		return
+	}
+	captureSentryError(cfg, component, stage, err)
+	if !cfg.Audit {
 		return
 	}
 	audit, auditErr := newAuditRecorder(cfg, stdout)

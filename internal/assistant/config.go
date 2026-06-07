@@ -90,6 +90,9 @@ type appConfig struct {
 	LangfuseHost                string
 	LangfusePublicKey           string
 	LangfuseSecretKey           string
+	SentryEnabled               bool
+	SentryDSN                   string
+	SentryEnvironment           string
 	TelegramBotToken            string
 	TelegramAPIBase             string
 	TelegramAllowedUsers        stringListFlag
@@ -269,6 +272,9 @@ func defaultConfig() appConfig {
 		LangfuseHost:              firstNonEmpty(os.Getenv("ASSISTANT_LANGFUSE_HOST"), "https://cloud.langfuse.com"),
 		LangfusePublicKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_PUBLIC_KEY")),
 		LangfuseSecretKey:         strings.TrimSpace(os.Getenv("ASSISTANT_LANGFUSE_SECRET_KEY")),
+		SentryEnabled:             envBool("ASSISTANT_SENTRY", false),
+		SentryDSN:                 strings.TrimSpace(os.Getenv("ASSISTANT_SENTRY_DSN")),
+		SentryEnvironment:         strings.TrimSpace(os.Getenv("ASSISTANT_SENTRY_ENVIRONMENT")),
 		TelegramBotToken:          strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_BOT_TOKEN")),
 		TelegramAPIBase:           strings.TrimSpace(os.Getenv("ASSISTANT_TELEGRAM_API_BASE")),
 		TelegramAllowedUsers:      splitListEnv(os.Getenv("ASSISTANT_TELEGRAM_ALLOWED_USERS")),

@@ -31,12 +31,12 @@ func runWithOptionalSchedulerFunc(ctx context.Context, cfg appConfig, stdout, st
 	defer cancel()
 
 	errCh := make(chan error, 2)
-	go func() {
-		errCh <- primary(runCtx, cfg, stdout, stderr)
-	}()
-	go func() {
-		errCh <- scheduler(runCtx, cfg, stdout, stderr)
-	}()
+	safeGo(cfg, "supervisor", "primary", errCh, func() error {
+		return primary(runCtx, cfg, stdout, stderr)
+	})
+	safeGo(cfg, "supervisor", "scheduler", errCh, func() error {
+		return scheduler(runCtx, cfg, stdout, stderr)
+	})
 
 	err := <-errCh
 	cancel()
@@ -48,21 +48,21 @@ func runPollers(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 	started := 0
 	if strings.TrimSpace(cfg.TelegramBotToken) != "" {
 		started++
-		go func() {
-			errCh <- runTelegramPoller(ctx, cfg, stdout, stderr)
-		}()
+		safeGo(cfg, "telegram", "poller", errCh, func() error {
+			return runTelegramPoller(ctx, cfg, stdout, stderr)
+		})
 	}
 	if strings.TrimSpace(cfg.GmailToken) != "" || googleAuthConfigured(cfg) {
 		started++
-		go func() {
-			errCh <- runGmailPoller(ctx, cfg, stdout, stderr)
-		}()
+		safeGo(cfg, "gmail", "poller", errCh, func() error {
+			return runGmailPoller(ctx, cfg, stdout, stderr)
+		})
 	}
 	if cfg.EnableScheduling {
 		started++
-		go func() {
-			errCh <- runScheduler(ctx, cfg, stdout, stderr)
-		}()
+		safeGo(cfg, "schedule", "poller", errCh, func() error {
+			return runScheduler(ctx, cfg, stdout, stderr)
+		})
 	}
 	if started == 0 {
 		return errors.New("poll requires ASSISTANT_TELEGRAM_BOT_TOKEN, ASSISTANT_GMAIL_ACCESS_TOKEN, a connected Google account (assistant google-connect), or --scheduling=true")

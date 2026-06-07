@@ -581,9 +581,12 @@ Configuration (all optional; absent means single-user/unlimited):
 | `ASSISTANT_USER_ID` | Identity of the user this instance serves. |
 | `ASSISTANT_TOKEN_LIMIT` | Monthly quota in total tokens (input + output). `0`/unset = unlimited. |
 | `ASSISTANT_USAGE_PATH` | Usage counter file (default `<state-dir>/usage.json`). |
-| `ASSISTANT_LANGFUSE` | Enable the optional Langfuse observability sink. |
+| `ASSISTANT_LANGFUSE` | Enable the optional Langfuse observability sink (binary must be built with `-tags langfuse`). |
 | `ASSISTANT_LANGFUSE_HOST` | Langfuse host (default `https://cloud.langfuse.com`). |
 | `ASSISTANT_LANGFUSE_PUBLIC_KEY` / `ASSISTANT_LANGFUSE_SECRET_KEY` | Langfuse API keys. |
+| `ASSISTANT_SENTRY` | Enable the optional Sentry crash/error sink (binary must be built with `-tags sentry`). |
+| `ASSISTANT_SENTRY_DSN` | Sentry DSN. Required when `ASSISTANT_SENTRY=1`; missing DSN is a silent no-op. |
+| `ASSISTANT_SENTRY_ENVIRONMENT` | Optional Sentry environment tag (e.g. `prod`, `staging`). |
 
 How it works:
 
@@ -601,22 +604,61 @@ How it works:
   live snapshot (`user_id`, `window_start`, `input_tokens`, `output_tokens`,
   `total_tokens`, cache tokens, `limit`, `remaining`, `exceeded`, `updated_at`).
   An orchestrator can poll it directly.
-- **Langfuse (optional).** When enabled, each completed turn is exported as a
-  trace + generation + a span per tool call. The trace carries `userId`,
-  `sessionId` (grouping a conversation's turns), the user prompt as input and
-  the assistant reply as output, plus tags (channel, model, mode). The
-  generation carries the model, model parameters (reasoning, verbosity,
-  max_tokens), token usage (including cache tokens), and the full redacted
-  message list (messages, tool calls, tool outputs, reasoning). Each tool call
-  becomes a span paired with its output and flagged on error. All free text is
-  redacted and capped, and the batch is trimmed to stay within Langfuse's
+- **Langfuse (optional, build-tagged).** When built in and enabled, each
+  completed turn is exported as a trace + generation + a span per tool call. The
+  trace carries `userId`, `sessionId` (grouping a conversation's turns), the user
+  prompt as input and the assistant reply as output, plus tags (channel, model,
+  mode). The generation carries the model, model parameters (reasoning,
+  verbosity, max_tokens), token usage (including cache tokens), and the full
+  redacted message list (messages, tool calls, tool outputs, reasoning). Each
+  tool call becomes a span paired with its output and flagged on error. All free
+  text is redacted and capped, and the batch is trimmed to stay within Langfuse's
   ingestion size limit. It is best-effort and asynchronous: it is never on the
-  enforcement hot path, and failures are logged, not fatal.
+  enforcement hot path, and failures are logged, not fatal. To keep the default
+  binary lean, the exporter and its dependency are compiled in only when you
+  build with `-tags langfuse`; default builds carry no Langfuse code and the env
+  vars are inert.
+- **Sentry (optional, build-tagged).** A crash/error sink that complements
+  Langfuse (which captures agent traces) and the audit log (local NDJSON):
+  Sentry aggregates panics and operational errors across the fleet and supports
+  alerting. To keep the default binary lean, the integration and its dependency
+  are compiled in only when you build with `-tags sentry`; default builds carry
+  no Sentry code or dependency and the env vars are inert. When built in and
+  enabled, every recovered panic (main goroutine and supervised pollers/
+  scheduler) and every operational error routed through the audit error path
+  (`telegram`, `gmail`, `schedule`, runtime) is reported, tagged by
+  `component`/`stage`, with the build version as the release and `ASSISTANT_USER_ID`
+  as the Sentry user. Free text is scrubbed with the same redactors as the audit
+  log before any event leaves the process. It is best-effort and never fatal; a
+  missing DSN is a silent no-op.
+
+Both sinks are opt-in at build time via Go build tags, so the default binary
+carries neither. Build the variant you need:
+
+```bash
+go build ./...                      # default: lean, neither sink compiled in
+go build -tags sentry ./...         # Sentry only
+go build -tags langfuse ./...       # Langfuse only
+go build -tags "sentry,langfuse" ./...  # both
+```
+
+The release publishes two container images to the GHCR repository
+(`ghcr.io/gratefulagents/assistant`): a lean default with neither sink, and a
+`-full` image with both compiled in. Pull the tag for the variant you want:
+
+| Image tag | Build tags | Sinks available (still env-gated) |
+| --- | --- | --- |
+| `latest` / `{{version}}` | none | none |
+| `latest-full` / `{{version}}-full` | `sentry,langfuse` | Sentry + Langfuse |
+
+The `-full` image is also the way to run Langfuse-only: pull it and leave
+`ASSISTANT_SENTRY` unset, since both sinks remain env-gated at runtime.
 
 Minimal env set to stamp out one assistant per subscriber (single container, no
 interactive setup): provider credentials, `ASSISTANT_USER_ID`,
 `ASSISTANT_TOKEN_LIMIT`, `ASSISTANT_GATEWAY_TOKEN`, the channel token(s) you
-use (e.g. `ASSISTANT_TELEGRAM_BOT_TOKEN`), and optionally the Langfuse keys.
+use (e.g. `ASSISTANT_TELEGRAM_BOT_TOKEN`), and — when running the `-full`
+image — the Langfuse keys and/or the Sentry DSN.
 
 ## Family Deploy
 

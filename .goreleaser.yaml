@@ -31,6 +31,29 @@ builds:
       - goos: windows
         goarch: arm64
 
+  # Combined observability variant: both the Sentry crash sink and the Langfuse
+  # trace exporter compiled in. Linux-only (image-only), same lean default for
+  # everyone else.
+  - id: assistant-full
+    main: ./cmd/assistant
+    binary: assistant
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -tags=sentry,langfuse
+    ldflags:
+      - -s -w
+      - -X github.com/gratefulagents/assistant/internal/assistant.buildVersion={{ .Version }}
+      - -X github.com/gratefulagents/assistant/internal/assistant.buildCommit={{ .FullCommit }}
+      - -X github.com/gratefulagents/assistant/internal/assistant.buildDate={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
 archives:
   - id: assistant
     builds:
@@ -51,6 +74,30 @@ dockers_v2:
     dockerfile: Dockerfile.goreleaser
     ids:
       - assistant
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    sbom: false
+    flags:
+      - "--pull=true"
+    labels:
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.name": "{{ .ProjectName }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.source": "https://github.com/gratefulagents/assistant"
+      "org.opencontainers.image.version": "{{ .Version }}"
+
+  # Combined image built from the `-tags sentry,langfuse` binary and published
+  # under `-full` tags. Both sinks are still env-gated at runtime, so operators
+  # who want only Langfuse can pull `-full` and leave ASSISTANT_SENTRY unset.
+  - images:
+      - "ghcr.io/gratefulagents/assistant"
+    tags:
+      - "{{ .Version }}-full"
+      - "latest-full"
+    dockerfile: Dockerfile.goreleaser
+    ids:
+      - assistant-full
     platforms:
       - linux/amd64
       - linux/arm64

@@ -19,11 +19,12 @@ scheduled jobs, Telegram and Gmail polling, and a local JSON gateway.
 - Google Connect: a hosted SSO broker so users grant Google access (Gmail, Calendar) once and the assistant gets short-lived tokens, instead of pasting expiring tokens or running Google MCP servers. Includes read-only Calendar agent tools (list events, event details).
 - `family-deploy` to stand up one containerized assistant per family member or freeloader, plus one OAuth refresher.
 - Small authenticated local JSON gateway for trusted local automation.
-- Hosted / multi-user metering: per-user token usage, local monthly token quotas with friendly enforcement, an authenticated `GET /usage` endpoint, and optional Langfuse observability — for one assistant instance per subscriber.
+- Hosted / multi-user metering: per-user token usage, local monthly token quotas with friendly enforcement, and an authenticated `GET /usage` endpoint — for one assistant instance per subscriber.
+- Optional, build-tagged observability: Langfuse trace export and Sentry crash/error reporting, shipped together in a separate `-full` container image. See [docs/features.md](docs/features.md).
 
 ## Install
 
-Requirements:
+### Requirements
 
 - OpenAI OAuth credentials at `~/.codex/auth.json`, or an OpenAI API key.
   To create the OAuth file, run `npx @openai/codex login` and complete the
@@ -31,8 +32,9 @@ Requirements:
 - Go 1.26.2 or newer, only if you install with `go install` or build from
   source.
 
-Download a prebuilt binary from
-[GitHub Releases](https://github.com/gratefulagents/assistant/releases):
+### Download a prebuilt binary
+
+From [GitHub Releases](https://github.com/gratefulagents/assistant/releases):
 
 1. Open the latest release.
 2. Download the binary for your OS and CPU, such as
@@ -40,7 +42,7 @@ Download a prebuilt binary from
    `assistant-windows-amd64.exe`.
 3. Make it executable and place it somewhere on your `PATH`.
 
-For macOS Apple Silicon:
+macOS (Apple Silicon):
 
 ```sh
 curl -L -o assistant \
@@ -49,7 +51,7 @@ chmod +x assistant
 sudo mv assistant /usr/local/bin/assistant
 ```
 
-For Linux x86_64:
+Linux (x86_64):
 
 ```sh
 curl -L -o assistant \
@@ -58,7 +60,7 @@ chmod +x assistant
 sudo mv assistant /usr/local/bin/assistant
 ```
 
-Install with Go:
+### Install with Go
 
 ```sh
 go install github.com/gratefulagents/assistant/cmd/assistant@latest
@@ -67,31 +69,32 @@ go install github.com/gratefulagents/assistant/cmd/assistant@latest
 `go install` places the binary in `GOBIN`, or `GOPATH/bin` when `GOBIN` is not
 set. Make sure that directory is on your `PATH`.
 
-Build from a clone for development:
+### Build from source
+
+Build a binary from a clone:
 
 ```sh
 go build ./cmd/assistant
 ```
 
-Check the installed binary:
-
-```sh
-assistant version
-```
-
-Update an installed release binary in place:
-
-```sh
-assistant update
-```
-
-From a source checkout, run without installing:
+Or run without installing:
 
 ```sh
 go run ./cmd/assistant --provider openai-oauth
 ```
 
+### Verify and update
+
+Check the installed binary, and update a release binary in place:
+
+```sh
+assistant version
+assistant update
+```
+
 ## Quick Start
+
+### Authenticate
 
 If you have not populated Codex OAuth credentials yet, run:
 
@@ -112,31 +115,10 @@ assistant oauth-refresh
 
 Use `assistant oauth-refresh --oauth-refresh-interval=0` for a one-shot refresh.
 
+### Run interactively or one-shot
+
 The examples below run with read-only workspace access and a 100-turn run
-budget:
-
-Telegram bot with OpenAI OAuth:
-
-1. Open Telegram and message `@BotFather`.
-2. Send `/newbot`, follow the prompts, and copy the bot token.
-3. Start a chat with the new bot and send it a message once.
-4. Run Assistant with the token in the process environment:
-
-```sh
-export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
-export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
-assistant telegram --provider openai-oauth --permission read-only --max-turns 100
-```
-
-Assistant reads OpenAI OAuth credentials from `~/.codex/auth.json` by default.
-Telegram polling uses outbound requests only, so no public webhook or inbound
-port is required. Telegram access is deny-by-default: set
-`ASSISTANT_TELEGRAM_ALLOWED_USERS` to your numeric Telegram user ID, or
-`ASSISTANT_TELEGRAM_ALLOWED_CHATS` to a specific chat ID. Messages outside the
-allowlist are ignored before an assistant run starts. Run failures send a
-generic Telegram reply by default; set `--telegram-error-details` or
-`ASSISTANT_TELEGRAM_ERROR_DETAILS=true` only when you want raw error details in
-the chat for debugging.
+budget.
 
 Interactive OAuth mode:
 
@@ -156,15 +138,6 @@ Interactive API-key mode:
 OPENAI_API_KEY=sk-... assistant --provider openai-api --permission read-only --max-turns 100
 ```
 
-Telegram with API-key mode:
-
-```sh
-export OPENAI_API_KEY='sk-...'
-export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
-export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
-assistant telegram --provider openai-api --permission read-only --max-turns 100
-```
-
 OpenRouter (e.g. DeepSeek V4 Pro):
 
 ```sh
@@ -180,6 +153,42 @@ Quiet smoke test with no tools or local extensions:
 assistant --provider openai-oauth --permission read-only --max-turns 100 --tools=false --project-state=false "reply with exactly: assistant works"
 ```
 
+### Connect Telegram
+
+1. Open Telegram and message `@BotFather`.
+2. Send `/newbot`, follow the prompts, and copy the bot token.
+3. Start a chat with the new bot and send it a message once.
+4. Run Assistant with the token in the process environment:
+
+```sh
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
+assistant telegram --provider openai-oauth --permission read-only --max-turns 100
+```
+
+Notes:
+
+- Assistant reads OpenAI OAuth credentials from `~/.codex/auth.json` by default.
+- Polling uses outbound requests only, so no public webhook or inbound port is
+  required.
+- Access is deny-by-default: set `ASSISTANT_TELEGRAM_ALLOWED_USERS` to your
+  numeric Telegram user ID, or `ASSISTANT_TELEGRAM_ALLOWED_CHATS` to a specific
+  chat ID. Messages outside the allowlist are ignored before a run starts.
+- Run failures send a generic Telegram reply by default; set
+  `--telegram-error-details` (or `ASSISTANT_TELEGRAM_ERROR_DETAILS=true`) only
+  when you want raw error details in the chat for debugging.
+
+To use an API key instead of OAuth:
+
+```sh
+export OPENAI_API_KEY='sk-...'
+export ASSISTANT_TELEGRAM_BOT_TOKEN='123456:bot-token'
+export ASSISTANT_TELEGRAM_ALLOWED_USERS='123456789'
+assistant telegram --provider openai-api --permission read-only --max-turns 100
+```
+
+### Use an environment file
+
 If you use `.env`, copy `.env.example`, fill in the values you need, then load
 it with your shell or `direnv` before running the command:
 
@@ -189,7 +198,7 @@ set -a
 set +a
 ```
 
-Schedule daemon:
+### Run the scheduler
 
 ```sh
 assistant schedule --provider openai-oauth --permission read-only --max-turns 100
@@ -237,35 +246,45 @@ standalone scheduler process.
 --memory-reviewer-timeout  memory_review timeout in seconds
 ```
 
-By default, Assistant enables SDK tools, guardrails, compaction, approvals, and
-model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
-MCP and skill catalog tools are opt-in with `--mcp` and `--skills`.
-Durable memory recall is lexical by default; set `--embedding-model` (or
-`ASSISTANT_EMBEDDING_MODEL`) to enable embeddings-backed hybrid semantic recall.
-Approval prompts go directly to the user by default. Set
-`--approvals-reviewer auto-review` to have a separate reviewer model classify
-approval-gated tool calls first; it allows or denies clear cases and escalates
-to terminal or Telegram approval only when human confirmation is required.
-Audit output is opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes
-structured events to stdout, standard logs, and
-`~/.gratefulagents/assistant/state/audit.ndjson` by default. Use
-`--audit-level low` for only tool calls with inputs, assistant text, and errors.
+### Defaults
 
-Interactive and channel conversations retain history for the lifetime of the
-running process. Telegram keys history by chat, Gmail by thread, and the local
-gateway by `thread_id` with `user_id` as a fallback. Slash commands are handled
-by the host: `/start`, `/help`, `/version`, `/plan`, `/chat`, `/mode <name>`,
-`/clear`, and `/stop`. Telegram also exposes the common commands through its
-bot menu and adds inline action buttons to assistant replies. Completed turns
-are persisted as redacted transcripts by default, separate from curated durable
-memory, so the model can use `session_search` for prior chat history and
-`memory_distill` or the LLM-backed `memory_review` to preview or apply stable
-memory candidates from recent transcripts. After-turn review is opt-in with
-`--memory-review preview` or `--memory-review apply`.
+- Enabled by default: SDK tools, guardrails, compaction, approvals, and
+  model-driven filesystem memory under `~/.gratefulagents/assistant/state`.
+- Opt-in: MCP servers (`--mcp`) and skill catalog tools (`--skills`).
+- Memory recall is lexical by default; set `--embedding-model` (or
+  `ASSISTANT_EMBEDDING_MODEL`) to enable embeddings-backed hybrid semantic recall.
+- Approval prompts go directly to the user by default. Set
+  `--approvals-reviewer auto-review` to have a separate reviewer model classify
+  approval-gated tool calls first; it allows or denies clear cases and escalates
+  to terminal or Telegram approval only when human confirmation is required.
+
+### Conversations and slash commands
+
+- History is retained for the lifetime of the running process: Telegram keys by
+  chat, Gmail by thread, and the local gateway by `thread_id` (falling back to
+  `user_id`).
+- Host-handled slash commands: `/start`, `/help`, `/version`, `/plan`, `/chat`,
+  `/mode <name>`, `/clear`, and `/stop`. Telegram also exposes the common
+  commands through its bot menu and adds inline action buttons to replies.
+- Completed turns are persisted as redacted transcripts by default, separate
+  from curated durable memory, so the model can use `session_search` for prior
+  chat history and `memory_distill` or the LLM-backed `memory_review` to preview
+  or apply stable memory candidates. After-turn review is opt-in with
+  `--memory-review preview` or `--memory-review apply`.
+
+### Audit logging
+
+- Opt-in with `--audit` or `ASSISTANT_AUDIT=true`; it writes structured events
+  to stdout, standard logs, and `~/.gratefulagents/assistant/state/audit.ndjson`
+  by default.
+- Use `--audit-level low` for only tool calls with inputs, assistant text, and
+  errors.
 
 ## Security
 
-Assistant runs tools on your machine, so the defaults are conservative:
+Assistant runs tools on your machine, so the defaults are conservative.
+
+### Conservative defaults
 
 - Approvals, guardrails, compaction, and SDK tools are on by default.
 - MCP servers, skill installation, private-network web access, audit logging,
@@ -280,7 +299,7 @@ Assistant runs tools on your machine, so the defaults are conservative:
   handles clear allow/deny cases first and falls back to human approval when
   the risk or authorization is ambiguous.
 
-Tool runs are isolated where practical:
+### Tool isolation
 
 - Built-in guardrails block obvious destructive shell commands and detect
   likely secrets in tool inputs and outputs.
@@ -291,7 +310,7 @@ Tool runs are isolated where practical:
   disabled git prompts, output caps, timeouts, and process-group cleanup. On
   Linux, read-only runs use Bubblewrap when available.
 
-Integrations are scoped explicitly:
+### Scoped integrations
 
 - MCP is disabled unless `--mcp` is set. Assistant supports stdio MCP servers,
   qualifies server names into tool names, treats server descriptions as

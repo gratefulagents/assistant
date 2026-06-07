@@ -29,10 +29,10 @@ func runGateway(ctx context.Context, cfg appConfig, stdout, stderr io.Writer) er
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	errCh := make(chan error, 1)
-	go func() {
+	safeGo(cfg, "gateway", "serve", errCh, func() error {
 		fmt.Fprintf(stderr, "assistant local gateway listening on %s\n", cfg.GatewayAddr)
-		errCh <- server.ListenAndServe()
-	}()
+		return server.ListenAndServe()
+	})
 	select {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -62,7 +62,7 @@ func (g *gateway) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
-	mux.HandleFunc("POST /v1/messages", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /v1/messages", g.recoverMiddleware("messages", func(w http.ResponseWriter, r *http.Request) {
 		if !g.authorized(r, g.cfg.GatewayToken) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -70,8 +70,8 @@ func (g *gateway) routes() http.Handler {
 		if err := g.handleGeneric(r.Context(), w, r); err != nil {
 			writeGatewayError(w, err)
 		}
-	})
-	mux.HandleFunc("GET /usage", func(w http.ResponseWriter, r *http.Request) {
+	}))
+	mux.HandleFunc("GET /usage", g.recoverMiddleware("usage", func(w http.ResponseWriter, r *http.Request) {
 		if !g.authorized(r, g.cfg.GatewayToken) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -82,8 +82,25 @@ func (g *gateway) routes() http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, store.Snapshot())
-	})
+	}))
 	return mux
+}
+
+// recoverMiddleware turns a panic in an HTTP handler into a reported error and
+// a clean 500 instead of net/http silently aborting the request: the panic is
+// captured by Sentry (no-op without the build tag) and recorded on the audit
+// error path, then the long-lived gateway keeps serving.
+func (g *gateway) recoverMiddleware(stage string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				reportSentryPanic(g.cfg, "gateway", stage, rec)
+				emitAuditError(g.cfg, g.stdout, "gateway", stage, fmt.Errorf("panic: %v", rec))
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			}
+		}()
+		h(w, r)
+	}
 }
 
 func (g *gateway) authorized(r *http.Request, token string) bool {
