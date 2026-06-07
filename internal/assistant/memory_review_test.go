@@ -120,13 +120,31 @@ func TestFinalizeMemoryReviewCandidatesAppliesAndSkipsDuplicates(t *testing.T) {
 
 func TestMemoryReviewOutputSchemaParsesStrictJSON(t *testing.T) {
 	schema := memoryReviewOutputSchema()
-	parsed, err := schema.ParseFn(`{"candidates":[{"content":"User prefers rg.","kind":"semantic","scope":"user","confidence":0.8,"reason":"explicit"}]}`)
+	parsed, err := schema.ParseFn(`{"candidates":[{"content":"User prefers rg.","kind":"semantic","scope":"user","tags":[],"confidence":0.8,"reason":"explicit","source_turn_ids":[]}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assessment, ok := parsed.(memoryReviewAssessment)
 	if !ok || len(assessment.Candidates) != 1 {
 		t.Fatalf("parsed = %#v", parsed)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(schema.Schema, &raw); err != nil {
+		t.Fatal(err)
+	}
+	props := raw["properties"].(map[string]any)
+	candidates := props["candidates"].(map[string]any)
+	items := candidates["items"].(map[string]any)
+	itemProps := items["properties"].(map[string]any)
+	required := map[string]bool{}
+	for _, value := range items["required"].([]any) {
+		required[value.(string)] = true
+	}
+	for name := range itemProps {
+		if !required[name] {
+			t.Fatalf("strict memory review schema property %q missing from required list", name)
+		}
 	}
 }
 

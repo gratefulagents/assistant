@@ -168,7 +168,7 @@ func memoryReviewOutputSchema() *agentsdk.OutputSchema {
 						"reason":{"type":"string"},
 						"source_turn_ids":{"type":"array","items":{"type":"string"}}
 					},
-					"required":["content","kind","scope","confidence","reason"],
+					"required":["content","kind","scope","tags","confidence","reason","source_turn_ids"],
 					"additionalProperties":false
 				}
 			}
@@ -220,6 +220,7 @@ func memoryReviewInstructions() string {
 		"Do not store secrets, credentials, access tokens, passwords, private keys, one-time chatter, transient tasks, medical/legal/financial sensitive details, or anything the user did not clearly state should persist.",
 		"Prefer concise memories written as standalone facts. Use scope=user for personal preferences and routines, scope=project for long-lived assistant/project context, kind=procedural for routines/workflows, kind=semantic for stable facts/preferences, and kind=episodic only for a meaningful dated event that should be remembered.",
 		"Return at most 12 candidates. If there are no safe durable memories, return an empty candidates array.",
+		"Every candidate must include tags and source_turn_ids arrays; use [] when no tags or source turns apply.",
 		"Return only JSON matching the schema.",
 	}, "\n\n")
 }
