@@ -56,9 +56,10 @@ builds:
 
 archives:
   - id: assistant
-    builds:
+    ids:
       - assistant
-    format: binary
+    formats:
+      - binary
     name_template: '{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}{{ if eq .Os "windows" }}.exe{{ end }}'
 
 checksum:
@@ -66,7 +67,8 @@ checksum:
   algorithm: sha256
 
 dockers_v2:
-  - images:
+  - id: assistant
+    images:
       - "ghcr.io/gratefulagents/assistant"
     tags:
       - "{{ .Version }}"
@@ -90,7 +92,8 @@ dockers_v2:
   # Combined image built from the `-tags sentry,langfuse` binary and published
   # under `-full` tags. Both sinks are still env-gated at runtime, so operators
   # who want only Langfuse can pull `-full` and leave ASSISTANT_SENTRY unset.
-  - images:
+  - id: assistant-full
+    images:
       - "ghcr.io/gratefulagents/assistant"
     tags:
       - "{{ .Version }}-full"
