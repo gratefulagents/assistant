@@ -109,6 +109,9 @@ type appConfig struct {
 	GoogleAuthPath              string
 	GoogleConnectURL            string
 	GoogleScopes                stringListFlag
+	MicrosoftAuthPath           string
+	MicrosoftConnectURL         string
+	MicrosoftScopes             stringListFlag
 	Prompt                      string
 	Instructions                string
 	InstructionsPath            string
@@ -189,6 +192,9 @@ func parseConfig(args []string) (appConfig, error) {
 	fs.StringVar(&cfg.GoogleAuthPath, "google-auth-path", cfg.GoogleAuthPath, "path to the brokered Google auth JSON; defaults to state-dir/google-auth.json")
 	fs.StringVar(&cfg.GoogleConnectURL, "google-connect-url", cfg.GoogleConnectURL, "base URL of the Google Connect broker for google-connect/refresh")
 	fs.Var(&cfg.GoogleScopes, "google-scope", "Google OAuth scope to request during google-connect; repeat or comma-separate")
+	fs.StringVar(&cfg.MicrosoftAuthPath, "microsoft-auth-path", cfg.MicrosoftAuthPath, "path to the brokered Microsoft auth JSON; defaults to state-dir/microsoft-auth.json")
+	fs.StringVar(&cfg.MicrosoftConnectURL, "microsoft-connect-url", cfg.MicrosoftConnectURL, "base URL of the Connect broker for microsoft-connect/refresh; empty falls back to --google-connect-url")
+	fs.Var(&cfg.MicrosoftScopes, "microsoft-scope", "Microsoft Graph scope to request during microsoft-connect; repeat or comma-separate")
 
 	if err := fs.Parse(args); err != nil {
 		return appConfig{}, fmt.Errorf("%w\n\n%s", err, usage())
@@ -291,6 +297,9 @@ func defaultConfig() appConfig {
 		GoogleAuthPath:            strings.TrimSpace(os.Getenv("ASSISTANT_GOOGLE_AUTH_PATH")),
 		GoogleConnectURL:          strings.TrimSpace(os.Getenv("ASSISTANT_GOOGLE_CONNECT_URL")),
 		GoogleScopes:              splitListEnv(os.Getenv("ASSISTANT_GOOGLE_SCOPES")),
+		MicrosoftAuthPath:         strings.TrimSpace(os.Getenv("ASSISTANT_MICROSOFT_AUTH_PATH")),
+		MicrosoftConnectURL:       strings.TrimSpace(os.Getenv("ASSISTANT_MICROSOFT_CONNECT_URL")),
+		MicrosoftScopes:           splitListEnv(os.Getenv("ASSISTANT_MICROSOFT_SCOPES")),
 	}
 }
 
@@ -446,16 +455,17 @@ func (c *appConfig) validateOAuthRefreshCommand() error {
 
 func isConnectCommand(arg string) bool {
 	switch strings.TrimSpace(strings.ToLower(arg)) {
-	case "google-connect", "google-refresh", "google-disconnect":
+	case "google-connect", "google-refresh", "google-disconnect",
+		"microsoft-connect", "microsoft-refresh", "microsoft-disconnect":
 		return true
 	default:
 		return false
 	}
 }
 
-// validateConnectCommand validates the Google Connect client commands. These
-// commands do not talk to the model provider, so they skip the standard
-// provider/model validation.
+// validateConnectCommand validates the Google/Microsoft Connect client
+// commands. These commands do not talk to the model provider, so they skip the
+// standard provider/model validation.
 func (c *appConfig) validateConnectCommand(command string) error {
 	if strings.TrimSpace(c.WorkDir) == "" {
 		c.WorkDir = "."
@@ -470,6 +480,16 @@ func (c *appConfig) validateConnectCommand(command string) error {
 	if len(c.GoogleScopes) == 0 {
 		c.GoogleScopes = defaultGoogleScopes()
 	}
+	c.MicrosoftAuthPath = expandUserPath(c.MicrosoftAuthPath)
+	c.MicrosoftScopes = normalizeMicrosoftScopes(c.MicrosoftScopes)
+	if len(c.MicrosoftScopes) == 0 {
+		c.MicrosoftScopes = defaultMicrosoftScopes()
+	}
+	// Both providers pair through the same Connect broker, so the Microsoft
+	// connect URL falls back to the Google one.
+	if strings.TrimSpace(c.MicrosoftConnectURL) == "" {
+		c.MicrosoftConnectURL = c.GoogleConnectURL
+	}
 	if c.OAuthRefreshInterval < 0 {
 		return errors.New("--oauth-refresh-interval must be non-negative")
 	}
@@ -479,8 +499,12 @@ func (c *appConfig) validateConnectCommand(command string) error {
 		if strings.TrimSpace(c.GoogleConnectURL) == "" {
 			return errors.New("google-connect requires --google-connect-url (or ASSISTANT_GOOGLE_CONNECT_URL)")
 		}
-	case "google-refresh", "google-disconnect":
-		// Resolved from the saved google-auth.json at runtime.
+	case "microsoft-connect":
+		if strings.TrimSpace(c.MicrosoftConnectURL) == "" {
+			return errors.New("microsoft-connect requires --microsoft-connect-url or --google-connect-url (or the matching ASSISTANT_*_CONNECT_URL)")
+		}
+	case "google-refresh", "google-disconnect", "microsoft-refresh", "microsoft-disconnect":
+		// Resolved from the saved auth JSON at runtime.
 	}
 	return nil
 }
@@ -613,6 +637,8 @@ examples:
   assistant gmail --provider openai-oauth --gmail-query "is:unread"
   assistant google-connect --google-connect-url https://connect.gratefulagents.dev
   assistant google-refresh
+  assistant microsoft-connect --microsoft-connect-url https://connect.gratefulagents.dev
+  assistant microsoft-refresh
   assistant poll --provider openai-oauth
   assistant serve --provider openai-oauth --addr :8080
   assistant family-deploy

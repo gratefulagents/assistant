@@ -476,6 +476,47 @@ secret. A well-behaved broker validates requested scopes against an allowlist,
 stores the pairing secret as a hash compared in constant time, and can encrypt
 refresh tokens at rest.
 
+## Microsoft Connect (SSO)
+
+Microsoft accounts (Outlook mail + calendar) connect through the same Connect
+broker using the same device pairing protocol, with `"provider": "microsoft"`
+in the `/device/start` request. The broker owns a Microsoft (Azure) OAuth web
+app and holds the Microsoft refresh token; the assistant stores only a pairing
+credential in `microsoft-auth.json` and mints short-lived Microsoft Graph
+access tokens via `POST /token`.
+
+```sh
+export ASSISTANT_MICROSOFT_CONNECT_URL='https://connect.gratefulagents.dev'
+assistant microsoft-connect --microsoft-scope mail.read --microsoft-scope calendars.read
+assistant microsoft-refresh
+assistant microsoft-disconnect
+```
+
+When `--microsoft-connect-url` is empty, `microsoft-connect` falls back to
+`--google-connect-url` since both providers usually pair through the same
+broker.
+
+### Outlook tools
+
+With a connected Microsoft account and `--tools` set, the assistant registers
+read-only Microsoft Graph agent tools, gated by the granted scopes:
+
+```text
+outlook_search_messages   search Outlook mail (needs Mail.Read)
+outlook_get_message       read one message by id (needs Mail.Read)
+outlook_list_events       list upcoming calendar events (needs Calendars.Read)
+outlook_get_event         fetch one event by id (needs Calendars.Read)
+```
+
+Client flags:
+
+```text
+--microsoft-connect-url    base URL of the Connect broker; falls back to --google-connect-url
+--microsoft-scope          Microsoft Graph scope to request; repeatable (e.g. mail.read, calendars.read)
+--microsoft-auth-path      credential path; defaults to state-dir/microsoft-auth.json
+--oauth-refresh-interval   microsoft-refresh interval; 0 runs once
+```
+
 ## Gmail Polling
 
 Gmail uses outbound polling against the Gmail API.

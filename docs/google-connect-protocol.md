@@ -21,6 +21,14 @@ links against broker code. Any server that implements these endpoints works.
   `state` the broker uses in the browser consent leg.
 - **Scopes.** The assistant requests Google scopes; the broker SHOULD enforce an
   allowlist and append `openid email` so it can record the account email.
+- **Providers.** The protocol supports multiple identity providers. The optional
+  `provider` field on `/device/start` selects one (`"google"` or
+  `"microsoft"`); omitted or empty means `"google"` for backward compatibility.
+  Grants are keyed by `(assistant_id, provider)`; the assistant uses a distinct
+  pairing credential file per provider (`google-auth.json`,
+  `microsoft-auth.json`). For Microsoft the broker appends
+  `openid email offline_access` and the minted tokens are Microsoft Graph
+  access tokens.
 
 All request and response bodies are JSON unless noted.
 
@@ -34,11 +42,16 @@ Request:
 
 ```json
 {
+  "provider": "google",
   "scopes": ["https://www.googleapis.com/auth/gmail.readonly"],
   "assistant_id": "client-generated-id",
   "secret_hash": "sha256-hex-of-secret"
 }
 ```
+
+`provider` is optional; omitted means `"google"`. A broker that does not
+support the requested provider returns `{ "error": "provider_not_supported" }`
+with a non-2xx status.
 
 Response:
 
@@ -104,8 +117,11 @@ Mint a fresh short-lived Google access token for a paired assistant.
 Request:
 
 ```json
-{ "assistant_id": "...", "secret": "raw-secret" }
+{ "provider": "google", "assistant_id": "...", "secret": "raw-secret" }
 ```
+
+`provider` is optional; omitted means `"google"`. It selects which provider's
+grant to mint from when one assistant has connected multiple providers.
 
 Response:
 
@@ -124,12 +140,12 @@ required" and stops using the credential.
 
 ### `POST /revoke`
 
-Revoke and delete a grant.
+Revoke and delete a grant. `provider` is optional and defaults to `"google"`.
 
 Request:
 
 ```json
-{ "assistant_id": "...", "secret": "raw-secret" }
+{ "provider": "google", "assistant_id": "...", "secret": "raw-secret" }
 ```
 
 ### `GET /healthz`
@@ -138,7 +154,8 @@ Returns `200` with `{ "status": "ok" }`.
 
 ## Stored client credential
 
-After a successful pairing the assistant writes `google-auth.json` containing
+After a successful pairing the assistant writes `google-auth.json` (or
+`microsoft-auth.json` for `provider: microsoft`) containing
 only the pairing credential (never a Google refresh token):
 
 ```json

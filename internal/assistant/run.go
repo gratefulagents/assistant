@@ -68,6 +68,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = runGoogleRefresh(ctx, cfg, stdout, stderr)
 	case "google-disconnect":
 		err = runGoogleDisconnect(ctx, cfg, stdout, stderr)
+	case "microsoft-connect":
+		err = runMicrosoftConnect(ctx, cfg, stdout, stderr)
+	case "microsoft-refresh":
+		err = runMicrosoftRefresh(ctx, cfg, stdout, stderr)
+	case "microsoft-disconnect":
+		err = runMicrosoftDisconnect(ctx, cfg, stdout, stderr)
 	case "serve":
 		err = runWithOptionalScheduler(ctx, cfg, stdout, stderr, runGateway)
 	case "telegram":
@@ -104,7 +110,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func isCommand(arg string) bool {
 	switch arg {
 	case "serve", "telegram", "gmail", "schedule", "poll", "version", "update", "oauth-refresh", "refresh-oauth",
-		"google-connect", "google-refresh", "google-disconnect":
+		"google-connect", "google-refresh", "google-disconnect",
+		"microsoft-connect", "microsoft-refresh", "microsoft-disconnect":
 		return true
 	default:
 		return false

@@ -117,6 +117,18 @@ func loadExtensions(ctx context.Context, cfg appConfig) (extensionBundle, error)
 		}
 		appTools = append(appTools, gmailTools...)
 	}
+	if cfg.EnableTools && microsoftAuthConfigured(cfg) {
+		outlookCalendarTools, err := microsoftCalendarTools(cfg)
+		if err != nil {
+			return extensionBundle{}, err
+		}
+		appTools = append(appTools, outlookCalendarTools...)
+		outlookMailTools, err := microsoftMailTools(cfg)
+		if err != nil {
+			return extensionBundle{}, err
+		}
+		appTools = append(appTools, outlookMailTools...)
+	}
 	if toolAccess(cfg.Permission) == agentsdk.ToolAccessLevelReadOnly {
 		appTools = markFilesystemExempt(appTools)
 	}
